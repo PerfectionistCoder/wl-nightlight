@@ -1,0 +1,14 @@
+[package]
+name = "wl-nightlight"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+bytemuck = "1.13"
+memmap2 = "0.9"
+shmemfdrs2 = "1.0"
+wayrs-client = "1.0"
+wayrs-protocols = { version = "0.14", features = [
+  "wlr-gamma-control-unstable-v1",
+] }
