@@ -1,3 +1,5 @@
 mod color;
+mod wayland;
+mod sunrise;
 
-pub mod wayland;
+pub fn run() {}

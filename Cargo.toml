@@ -12,3 +12,6 @@ wayrs-client = "1.0"
 wayrs-protocols = { version = "0.14", features = [
   "wlr-gamma-control-unstable-v1",
 ] }
+
+[dev-dependencies]
+chrono = "0.4.39"
