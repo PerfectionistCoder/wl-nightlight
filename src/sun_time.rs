@@ -1,10 +1,12 @@
 use anyhow::Error;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::config::{Latitude, Longitude};
+
 #[derive(Debug)]
 pub struct SunTime {
-    sunrise: Timestamp,
-    sunset: Timestamp,
+    pub sunrise: Timestamp,
+    pub sunset: Timestamp,
 }
 
 pub type Timestamp = i64;
@@ -17,7 +19,7 @@ pub fn get_current_timestamp() -> Result<Timestamp, Error> {
 }
 
 impl SunTime {
-    pub fn calc(lat: f64, lng: f64, timestamp: Option<Timestamp>) -> Result<Self, Error> {
+    pub fn calc(lat: Latitude, lng: Longitude, timestamp: Option<Timestamp>) -> Result<Self, Error> {
         const FULL_CIRCLE: f64 = 360_f64;
 
         let now = get_current_timestamp()?;
@@ -65,9 +67,8 @@ impl SunTime {
 
 #[cfg(test)]
 mod tests {
-    use crate::test_utils::LONDON;
-
     use super::*;
+    use crate::test_utils::LONDON;
     use chrono::{DateTime, Datelike, NaiveDate, Utc};
 
     use std::cmp::{Eq, PartialEq};

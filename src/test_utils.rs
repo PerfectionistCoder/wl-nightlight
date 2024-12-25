@@ -1,6 +1,8 @@
+use crate::config::{Latitude, Longitude};
+
 pub struct LatLng {
-    pub lat: f64,
-    pub lng: f64,
+    pub lat: Latitude,
+    pub lng: Longitude,
 }
 
 pub const LONDON: LatLng = LatLng {
