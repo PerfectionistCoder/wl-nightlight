@@ -227,40 +227,27 @@ impl WaylandState {
         } else {
             let color = self.outputs.iter().fold(
                 Color {
-                    inverted: true,
                     brightness: 0.0,
                     temp: 0,
-                    gamma: 0.0,
                 },
                 |color, output| {
                     let output_color = output.color();
                     Color {
-                        inverted: color.inverted && output_color.inverted,
                         brightness: color.brightness + output_color.brightness,
                         temp: color.temp + output_color.temp,
-                        gamma: color.gamma + output_color.gamma,
                     }
                 },
             );
 
             Color {
                 temp: color.temp / self.outputs.len() as u16,
-                gamma: color.gamma / self.outputs.len() as f64,
                 brightness: color.brightness / self.outputs.len() as f64,
-                inverted: color.inverted,
             }
         }
     }
 
     pub fn color_changed(&self) -> bool {
         self.outputs.iter().any(|output| output.color_changed())
-    }
-
-    pub fn set_inverted(&mut self, inverted: bool) {
-        for output in &mut self.outputs {
-            let color = output.color();
-            output.set_color(Color { inverted, ..color });
-        }
     }
 
     pub fn set_brightness(&mut self, brightness: f64) {
@@ -305,28 +292,6 @@ impl WaylandState {
             if let Some(new_color) = output.color().with_updated_temp(delta) {
                 updated = true;
                 output.set_color(new_color);
-            }
-        }
-
-        updated
-    }
-
-    pub fn set_gamma(&mut self, gamma: f64) {
-        for output in &mut self.outputs {
-            let color = output.color();
-            output.set_color(Color { gamma, ..color });
-        }
-    }
-
-    /// Returns `true` if any output was updated
-    pub fn update_gamma(&mut self, delta: f64) -> bool {
-        let mut updated = false;
-        for output in &mut self.outputs {
-            let color = output.color();
-            let gamma = (output.color().gamma + delta).max(0.1);
-            if gamma != color.gamma {
-                updated = true;
-                output.set_color(Color { gamma, ..color });
             }
         }
 
