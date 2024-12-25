@@ -19,11 +19,10 @@ pub fn get_current_timestamp() -> Result<Timestamp, Error> {
 }
 
 impl SunTime {
-    pub fn calc(lat: Latitude, lng: Longitude, timestamp: Option<Timestamp>) -> Result<Self, Error> {
+    pub fn calc_time(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self, Error> {
         const FULL_CIRCLE: f64 = 360_f64;
 
-        let now = get_current_timestamp()?;
-        let j_date = timestamp.unwrap_or(now) as f64 / 86400.0 + 2440587.5;
+        let j_date = timestamp as f64 / 86400.0 + 2440587.5;
 
         let n = (j_date - (2451545.0 + 0.0009) + 69.184 / 86400.0).ceil();
 
@@ -68,39 +67,87 @@ impl SunTime {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::LONDON;
-    use chrono::{DateTime, Datelike, NaiveDate, Utc};
+    use crate::test_utils::{get_timestamp, LONDON};
+    use chrono::Datelike;
 
-    use std::cmp::{Eq, PartialEq};
-    impl Eq for SunTime {}
-    impl PartialEq for SunTime {
-        fn eq(&self, other: &SunTime) -> bool {
-            self.sunrise == other.sunrise && self.sunset == other.sunset
+    mod sun_time_date {
+        use chrono::Local;
+
+        use crate::test_utils::get_datetime;
+
+        use super::*;
+
+        #[test]
+        fn between_sunrise_sunset() {
+            let SunTime { sunrise, sunset } =
+                SunTime::calc_time(LONDON.lat, LONDON.lng, Local::now().timestamp()).unwrap();
+            let sunrise_date = get_datetime(sunrise, LONDON.offset);
+            let sunset_date = get_datetime(sunset, LONDON.offset);
+            assert_eq!(sunrise_date.day(), sunset_date.day())
+        }
+
+        #[test]
+        fn before_sunrise() {
+            let timestamp = get_timestamp(6, 1, LONDON.offset);
+            let SunTime { sunrise, .. } =
+                SunTime::calc_time(LONDON.lat, LONDON.lng, timestamp).unwrap();
+            let date = get_datetime(timestamp, LONDON.offset);
+            let sunrise_date = get_datetime(sunrise, LONDON.offset);
+            assert_eq!(date.day(), sunrise_date.day());
+        }
+
+        #[test]
+        fn after_sunset() {
+            let timestamp = get_timestamp(6, 23, LONDON.offset);
+            let SunTime { sunset, .. } =
+                SunTime::calc_time(LONDON.lat, LONDON.lng, timestamp).unwrap();
+            let date = get_datetime(timestamp, LONDON.offset);
+            let sunset_date = get_datetime(sunset, LONDON.offset);
+            assert_eq!(date.day() + 1, sunset_date.day());
         }
     }
 
-    #[test]
-    fn within_same_day() {
-        let SunTime { sunrise, sunset } = SunTime::calc(LONDON.lat, LONDON.lng, None).unwrap();
-        let sunrise_date = DateTime::from_timestamp(sunrise, 0).unwrap();
-        let sunset_date = DateTime::from_timestamp(sunset, 0).unwrap();
-        assert_eq!(sunrise_date.day(), sunset_date.day())
-    }
+    mod sun_time {
+        use chrono::Timelike;
 
-    #[test]
-    fn before_and_after_noon() {
-        let time = DateTime::<Utc>::from_naive_utc_and_offset(
-            NaiveDate::from_ymd_opt(2024, 5, 1)
-                .unwrap()
-                .and_hms_opt(12, 0, 0)
-                .unwrap(),
-            Utc,
-        )
-        .timestamp();
-        let SunTime { sunrise, sunset } =
-            SunTime::calc(LONDON.lat, LONDON.lng, Some(time)).unwrap();
-        assert!(sunrise < sunset);
-        assert!(sunrise < time);
-        assert!(sunset > time);
+        use crate::test_utils::{get_datetime, SunTimeDate, NAIROBI};
+
+        use super::*;
+
+        #[test]
+        fn utc() {
+            let timestamp = get_timestamp(6, 12, LONDON.offset);
+            let SunTime { sunrise, sunset } =
+                SunTime::calc_time(LONDON.lat, LONDON.lng, timestamp).unwrap();
+            assert!(sunrise < sunset);
+            assert!(sunrise < timestamp);
+            assert!(sunset > timestamp);
+        }
+
+        #[test]
+        fn eat() {
+            let timestamp = get_timestamp(6, 0, NAIROBI.offset);
+            let SunTime { sunrise, sunset } =
+                SunTime::calc_time(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
+            assert_eq!(get_datetime(sunrise, NAIROBI.offset).hour(), 6);
+            assert_eq!(get_datetime(sunset, NAIROBI.offset).hour(), 18);
+        }
+
+        #[test]
+        fn summer_winter() {
+            let summer = get_timestamp(8, 0, LONDON.offset);
+            let summer_sun_time_date = SunTimeDate::new(
+                SunTime::calc_time(LONDON.lat, LONDON.lng, summer).unwrap(),
+                LONDON.offset,
+            );
+            let winter = get_timestamp(12, 0, LONDON.offset);
+            let winter_sun_time_date = SunTimeDate::new(
+                SunTime::calc_time(LONDON.lat, LONDON.lng, winter).unwrap(),
+                LONDON.offset,
+            );
+
+            assert!(summer_sun_time_date.sunrise.hour() < winter_sun_time_date.sunrise.hour());
+            assert!(summer_sun_time_date.sunset.hour() > winter_sun_time_date.sunset.hour());
+        }
     }
 }
