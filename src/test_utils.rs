@@ -51,10 +51,10 @@ pub struct SunTimeDate {
 }
 
 impl SunTimeDate {
-    pub fn new(SunTime { sunrise, sunset }: SunTime, offset: i32) -> Self {
+    pub fn new(sun_time: SunTime, offset: i32) -> Self {
         Self {
-            sunrise: get_datetime(sunrise, offset),
-            sunset: get_datetime(sunset, offset),
+            sunrise: get_datetime(sun_time.sunrise(), offset),
+            sunset: get_datetime(sun_time.sunset(), offset),
         }
     }
 }

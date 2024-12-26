@@ -5,8 +5,8 @@ use crate::config::{Latitude, Longitude};
 
 #[derive(Debug)]
 pub struct SunTime {
-    pub sunrise: Timestamp,
-    pub sunset: Timestamp,
+    sunrise: Timestamp,
+    sunset: Timestamp,
 }
 
 pub type Timestamp = i64;
@@ -19,6 +19,14 @@ pub fn get_current_timestamp() -> Result<Timestamp, Error> {
 }
 
 impl SunTime {
+    pub fn sunrise(&self) -> Timestamp {
+        self.sunrise
+    }
+
+    pub fn sunset(&self) -> Timestamp {
+        self.sunset
+    }
+
     pub fn calc_time(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self, Error> {
         const FULL_CIRCLE: f64 = 360_f64;
 
@@ -70,7 +78,7 @@ mod tests {
     use crate::test_utils::{get_timestamp, LONDON};
     use chrono::Datelike;
 
-    mod sun_time_date {
+    mod test_sun_time_date {
         use chrono::Local;
 
         use crate::test_utils::get_datetime;
@@ -78,7 +86,7 @@ mod tests {
         use super::*;
 
         #[test]
-        fn between_sunrise_sunset() {
+        fn now() {
             let SunTime { sunrise, sunset } =
                 SunTime::calc_time(LONDON.lat, LONDON.lng, Local::now().timestamp()).unwrap();
             let sunrise_date = get_datetime(sunrise, LONDON.offset);
@@ -107,7 +115,7 @@ mod tests {
         }
     }
 
-    mod sun_time {
+    mod test_sun_time_timestamp {
         use chrono::Timelike;
 
         use crate::test_utils::{get_datetime, SunTimeDate, NAIROBI};
