@@ -1,5 +1,6 @@
 use std::io::ErrorKind;
 use std::os::fd::{AsRawFd, RawFd};
+use std::thread;
 
 use anyhow::{bail, Result};
 
@@ -297,4 +298,20 @@ impl WaylandState {
 
         updated
     }
+
+    pub fn change_to_color(mut self, color2: Color, duration: u16) -> Self {
+        const MAX_INTERVAL: u16 = 5;
+        let mut handles = vec![];
+        for mut output in self.outputs {
+            handles.push(thread::spawn(move || {
+                output.color = color2;
+                output
+            }));
+        }
+        self.outputs = handles.into_iter().map(|h| h.join().unwrap()).collect();
+        self
+    }
 }
+
+#[cfg(test)]
+mod tests {}
