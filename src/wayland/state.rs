@@ -1,4 +1,8 @@
-use std::thread;
+use std::{
+    sync::{Arc, Mutex},
+    thread::{self, sleep},
+    time::Duration,
+};
 
 use anyhow::{bail, Result};
 use wayrs_client::{
@@ -10,10 +14,14 @@ use wayrs_protocols::wlr_gamma_control_unstable_v1::*;
 
 use crate::color::Color;
 
-use super::output::WaylandOutput;
+use super::output::{self, WaylandOutput};
+
+const MAX_INTERVAL: u16 = 5;
+const MIN_TEMP: u16 = 100;
+const MIN_BRIGHTNESS: f64 = 0.05;
 
 pub struct WaylandState {
-    outputs: Vec<WaylandOutput>,
+    outputs: Vec<Arc<Mutex<WaylandOutput>>>,
     gamma_manager: ZwlrGammaControlManagerV1,
 }
 
@@ -35,7 +43,7 @@ impl WaylandState {
         })
     }
 
-    pub fn outputs(&mut self) -> &mut Vec<WaylandOutput> {
+    pub fn outputs(&mut self) -> &mut Vec<Arc<Mutex<WaylandOutput>>> {
         &mut self.outputs
     }
 
@@ -54,7 +62,7 @@ impl WaylandState {
                     temp: 0,
                 },
                 |color, output| {
-                    let output_color = output.color();
+                    let output_color = output.lock().unwrap().color();
                     Color {
                         brightness: color.brightness + output_color.brightness,
                         temp: color.temp + output_color.temp,
@@ -70,38 +78,59 @@ impl WaylandState {
     }
 
     pub fn color_changed(&self) -> bool {
-        self.outputs.iter().any(|output| output.color_changed())
+        self.outputs
+            .iter()
+            .any(|output| output.lock().unwrap().color_changed())
     }
 
-    pub fn change_to_color(mut self, color2: Color) -> Self {
-        // const MAX_INTERVAL: u16 = 5;
-        let mut handles = vec![];
-        for mut output in self.outputs {
-            handles.push(thread::spawn(move || {
-                output.set_color(color2);
-                output
-            }));
+    pub fn change_to_color(&self, target: Color) {
+        for output in &self.outputs {
+            let output = Arc::clone(output);
+            thread::spawn(move || {
+                output.lock().unwrap().set_color(target);
+            });
         }
-        self.outputs = handles.into_iter().map(|h| h.join().unwrap()).collect();
-        self
     }
 }
 
-#[cfg(test)]
-trait TestTraitWaylandState {}
+// #[cfg(test)]
+// mod test {
+//     use super::*;
+//     use crate::wayland;
 
-#[cfg(test)]
-struct TestWaylandState {
-    outputs: Vec<WaylandOutput>,
-}
+//     mod test_color_change {
+//         use super::*;
 
-#[cfg(test)]
-impl TestTraitWaylandState for TestWaylandState {}
+//         fn get_state() -> WaylandState {
+//             let (_, state) = wayland::WaylandClient::new().unwrap();
+//             state
+//         }
 
-#[cfg(test)]
-impl TestTraitWaylandState for WaylandState {}
+//         #[test]
+//         fn color_set_to_target() {
+//             let mut state = get_state();
+//             let target = Color {
+//                 temp: 4500,
+//                 brightness: 0.5,
+//             };
+//             state.change_to_color(target);
+//             assert_eq!(state.color(), target);
+//         }
 
-#[cfg(test)]
-mod tests {
-    mod test_resulted_gamma {}
-}
+//         #[test]
+//         fn consecutive_call() {
+//             let mut state = get_state();
+//             let target1 = Color {
+//                 temp: 5400,
+//                 brightness: 1.0,
+//             };
+//             let target2 = Color {
+//                 temp: 4500,
+//                 brightness: 0.5,
+//             };
+//             state.change_to_color(target1);
+//             state.change_to_color(target2);
+//             assert_eq!(state.color(), target2);
+//         }
+//     }
+// }

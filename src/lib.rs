@@ -17,19 +17,18 @@ pub fn run() {
         println!("{}", wayland_state.color_changed());
 
         let mode = LightMode::get_mode(cfg.lat(), cfg.lng()).unwrap();
-        wayland_state = match mode {
+        match mode {
             Light(t) => {
-                let s = wayland_state.change_to_color(cfg.light_mode());
+                wayland_state.change_to_color(cfg.light_mode());
                 time = t;
-                s
             }
             Dark(t) => {
-                let s = wayland_state.change_to_color(cfg.dark_mode());
+                wayland_state.change_to_color(cfg.dark_mode());
                 time = t;
-                s
             }
         };
-
+        sleep(Duration::from_secs_f64(0.1));
+        
         loop {
             if wayland.poll(&mut wayland_state).is_ok() {
                 println!("change");
@@ -39,6 +38,7 @@ pub fn run() {
         }
 
         println!("wait {}", time);
+        println!("{:?}", wayland_state.outputs());
         sleep(Duration::from_secs(time as u64));
     }
 }
