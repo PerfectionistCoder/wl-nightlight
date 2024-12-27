@@ -1,4 +1,4 @@
-use anyhow::Error;
+use anyhow::{Error, Result};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{Latitude, Longitude};
@@ -11,7 +11,7 @@ pub struct SunTime {
     sunset: Timestamp,
 }
 
-pub fn get_current_timestamp() -> Result<Timestamp, Error> {
+pub fn get_current_timestamp() -> Result<Timestamp> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)?
         .as_secs()
@@ -28,7 +28,7 @@ impl SunTime {
         self.sunset
     }
 
-    pub fn calculate(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self, Error> {
+    pub fn calculate(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self> {
         const FULL_CIRCLE: f64 = 360_f64;
 
         let j_date = timestamp as f64 / 86400.0 + 2440587.5;
