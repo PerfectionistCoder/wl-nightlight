@@ -33,7 +33,7 @@ impl WaylandOutput {
                 if let wl_output::Event::Name(name) = ctx.event {
                     let output = ctx
                         .state
-                        .outputs
+                        .outputs()
                         .iter_mut()
                         .find(|o| o.wl == ctx.proxy)
                         .unwrap();
@@ -54,20 +54,23 @@ impl WaylandOutput {
                 |ctx: EventCtx<WaylandState, ZwlrGammaControlV1>| {
                     let output_index = ctx
                         .state
-                        .outputs
+                        .outputs()
                         .iter()
                         .position(|o| o.gamma_control == ctx.proxy)
                         .expect("Received event for unknown output");
                     match ctx.event {
                         zwlr_gamma_control_v1::Event::GammaSize(size) => {
-                            let output = &mut ctx.state.outputs[output_index];
+                            let output = &mut ctx.state.outputs()[output_index];
                             eprintln!("WaylandOutput {}: ramp_size = {}", output.reg_name, size);
                             output.ramp_size = size as usize;
                             output.update_displayed_color(ctx.conn).unwrap();
                         }
                         zwlr_gamma_control_v1::Event::Failed => {
-                            let output = ctx.state.outputs.swap_remove(output_index);
-                            eprintln!("WaylandOutput {}: gamma_control::Event::Failed", output.reg_name);
+                            let output = ctx.state.outputs().swap_remove(output_index);
+                            eprintln!(
+                                "WaylandOutput {}: gamma_control::Event::Failed",
+                                output.reg_name
+                            );
                             output.destroy(ctx.conn);
                         }
                         _ => (),
