@@ -35,18 +35,6 @@ impl WaylandState {
         })
     }
 
-    pub fn output_by_reg_name(&self, reg_name: u32) -> Option<&WaylandOutput> {
-        self.outputs
-            .iter()
-            .find(|output| output.reg_name() == reg_name)
-    }
-
-    pub fn mut_output_by_reg_name(&mut self, reg_name: u32) -> Option<&mut WaylandOutput> {
-        self.outputs
-            .iter_mut()
-            .find(|output| output.reg_name() == reg_name)
-    }
-
     pub fn outputs(&mut self) -> &mut Vec<WaylandOutput> {
         &mut self.outputs
     }
@@ -85,56 +73,8 @@ impl WaylandState {
         self.outputs.iter().any(|output| output.color_changed())
     }
 
-    pub fn set_brightness(&mut self, brightness: f64) {
-        for output in &mut self.outputs {
-            let color = output.color();
-            output.set_color(Color {
-                brightness,
-                ..color
-            });
-        }
-    }
-
-    /// Returns `true` if any output was updated
-    pub fn update_brightness(&mut self, delta: f64) -> bool {
-        let mut updated = false;
-        for output in &mut self.outputs {
-            let color = output.color();
-            let brightness = (color.brightness + delta).clamp(0.0, 1.0);
-            if brightness != color.brightness {
-                updated = true;
-                output.set_color(Color {
-                    brightness,
-                    ..color
-                });
-            }
-        }
-
-        updated
-    }
-
-    pub fn set_temperature(&mut self, temp: u16) {
-        for output in &mut self.outputs {
-            let color = output.color();
-            output.set_color(Color { temp, ..color });
-        }
-    }
-
-    /// Returns `true` if any output was updated
-    pub fn update_temperature(&mut self, delta: i16) -> bool {
-        let mut updated = false;
-        for output in &mut self.outputs {
-            if let Some(new_color) = output.color().with_updated_temp(delta) {
-                updated = true;
-                output.set_color(new_color);
-            }
-        }
-
-        updated
-    }
-
-    pub fn change_to_color(mut self, color2: Color, duration: u16) -> Self {
-        const MAX_INTERVAL: u16 = 5;
+    pub fn change_to_color(mut self, color2: Color) -> Self {
+        // const MAX_INTERVAL: u16 = 5;
         let mut handles = vec![];
         for mut output in self.outputs {
             handles.push(thread::spawn(move || {

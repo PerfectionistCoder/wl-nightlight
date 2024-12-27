@@ -19,12 +19,12 @@ pub fn run() {
         let mode = LightMode::get_mode(cfg.lat(), cfg.lng()).unwrap();
         wayland_state = match mode {
             Light(t) => {
-                let s = wayland_state.change_to_color(cfg.light_mode(), 0);
+                let s = wayland_state.change_to_color(cfg.light_mode());
                 time = t;
                 s
             }
             Dark(t) => {
-                let s = wayland_state.change_to_color(cfg.dark_mode(), 0);
+                let s = wayland_state.change_to_color(cfg.dark_mode());
                 time = t;
                 s
             }

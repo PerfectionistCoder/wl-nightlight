@@ -107,12 +107,6 @@ impl WaylandOutput {
         }
     }
 
-    pub fn object_path(&self) -> Option<String> {
-        self.name
-            .as_deref()
-            .map(|name| format!("/outputs/{}", name.replace('-', "_")))
-    }
-
     pub fn update_displayed_color(&mut self, conn: &mut Connection<WaylandState>) -> Result<()> {
         if self.ramp_size == 0 {
             return Ok(());
