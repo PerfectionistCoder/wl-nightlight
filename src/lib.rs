@@ -11,7 +11,7 @@ mod wayland;
 pub fn run() {
     let cfg = Config::new();
     let mut time;
-    let (mut wayland, mut wayland_state) = wayland::Wayland::new().unwrap();
+    let (mut wayland, mut wayland_state) = wayland::Client::new().unwrap();
 
     loop {
         println!("{}", wayland_state.color_changed());
