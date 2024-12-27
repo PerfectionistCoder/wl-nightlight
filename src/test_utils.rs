@@ -1,6 +1,6 @@
 use crate::{
     config::{Latitude, Longitude},
-    sun_time::{SunTime, Timestamp},
+    mode::sun_time::{SunTime, Timestamp},
 };
 use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
 

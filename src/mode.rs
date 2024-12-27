@@ -1,7 +1,13 @@
 use crate::config::{Latitude, Longitude};
 
-use crate::sun_time::{get_current_timestamp, SunTime, Timestamp};
+use sun_time::{get_current_timestamp, SunTime, Timestamp};
+
 use anyhow::Error;
+
+#[cfg(test)]
+pub(crate) mod sun_time;
+#[cfg(not(test))]
+mod sun_time;
 
 #[derive(PartialEq, Eq)]
 pub enum LightMode {
@@ -11,7 +17,7 @@ pub enum LightMode {
 
 impl LightMode {
     fn decide_mode(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self, Error> {
-        let sun_time = SunTime::calc_time(lat, lng, timestamp)?;
+        let sun_time = SunTime::calculate(lat, lng, timestamp)?;
         Ok(
             if sun_time.sunrise() < timestamp && timestamp < sun_time.sunset() {
                 LightMode::Light(sun_time.sunset() - timestamp)
@@ -30,6 +36,7 @@ impl LightMode {
 mod tests {
     use super::*;
     use crate::test_utils::{get_timestamp, NAIROBI};
+    
     const HOUR: i64 = 3600;
 
     mod test_light_mode_and_time_left {

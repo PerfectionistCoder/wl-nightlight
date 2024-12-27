@@ -3,13 +3,14 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::config::{Latitude, Longitude};
 
+pub type Timestamp = i64;
+
 #[derive(Debug)]
 pub struct SunTime {
     sunrise: Timestamp,
     sunset: Timestamp,
 }
 
-pub type Timestamp = i64;
 pub fn get_current_timestamp() -> Result<Timestamp, Error> {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)?
@@ -27,7 +28,7 @@ impl SunTime {
         self.sunset
     }
 
-    pub fn calc_time(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self, Error> {
+    pub fn calculate(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self, Error> {
         const FULL_CIRCLE: f64 = 360_f64;
 
         let j_date = timestamp as f64 / 86400.0 + 2440587.5;
@@ -88,7 +89,7 @@ mod tests {
         #[test]
         fn now() {
             let SunTime { sunrise, sunset } =
-                SunTime::calc_time(LONDON.lat, LONDON.lng, Local::now().timestamp()).unwrap();
+                SunTime::calculate(LONDON.lat, LONDON.lng, Local::now().timestamp()).unwrap();
             let sunrise_date = get_datetime(sunrise, LONDON.offset);
             let sunset_date = get_datetime(sunset, LONDON.offset);
             assert_eq!(sunrise_date.day(), sunset_date.day())
@@ -98,7 +99,7 @@ mod tests {
         fn before_sunrise() {
             let timestamp = get_timestamp(6, 1, LONDON.offset);
             let SunTime { sunrise, .. } =
-                SunTime::calc_time(LONDON.lat, LONDON.lng, timestamp).unwrap();
+                SunTime::calculate(LONDON.lat, LONDON.lng, timestamp).unwrap();
             let date = get_datetime(timestamp, LONDON.offset);
             let sunrise_date = get_datetime(sunrise, LONDON.offset);
             assert_eq!(date.day(), sunrise_date.day());
@@ -108,7 +109,7 @@ mod tests {
         fn after_sunset() {
             let timestamp = get_timestamp(6, 23, LONDON.offset);
             let SunTime { sunset, .. } =
-                SunTime::calc_time(LONDON.lat, LONDON.lng, timestamp).unwrap();
+                SunTime::calculate(LONDON.lat, LONDON.lng, timestamp).unwrap();
             let date = get_datetime(timestamp, LONDON.offset);
             let sunset_date = get_datetime(sunset, LONDON.offset);
             assert_eq!(date.day() + 1, sunset_date.day());
@@ -126,7 +127,7 @@ mod tests {
         fn utc() {
             let timestamp = get_timestamp(6, 12, LONDON.offset);
             let SunTime { sunrise, sunset } =
-                SunTime::calc_time(LONDON.lat, LONDON.lng, timestamp).unwrap();
+                SunTime::calculate(LONDON.lat, LONDON.lng, timestamp).unwrap();
             assert!(sunrise < sunset);
             assert!(sunrise < timestamp);
             assert!(sunset > timestamp);
@@ -136,7 +137,7 @@ mod tests {
         fn eat() {
             let timestamp = get_timestamp(6, 0, NAIROBI.offset);
             let SunTime { sunrise, sunset } =
-                SunTime::calc_time(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
+                SunTime::calculate(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
             assert_eq!(get_datetime(sunrise, NAIROBI.offset).hour(), 6);
             assert_eq!(get_datetime(sunset, NAIROBI.offset).hour(), 18);
         }
@@ -145,12 +146,12 @@ mod tests {
         fn summer_winter() {
             let summer = get_timestamp(8, 0, LONDON.offset);
             let summer_sun_time_date = SunTimeDate::new(
-                SunTime::calc_time(LONDON.lat, LONDON.lng, summer).unwrap(),
+                SunTime::calculate(LONDON.lat, LONDON.lng, summer).unwrap(),
                 LONDON.offset,
             );
             let winter = get_timestamp(12, 0, LONDON.offset);
             let winter_sun_time_date = SunTimeDate::new(
-                SunTime::calc_time(LONDON.lat, LONDON.lng, winter).unwrap(),
+                SunTime::calculate(LONDON.lat, LONDON.lng, winter).unwrap(),
                 LONDON.offset,
             );
 
