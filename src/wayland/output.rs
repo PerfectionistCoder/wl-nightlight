@@ -11,7 +11,7 @@ use crate::color::{colorramp_fill, Color};
 use super::state::WaylandState;
 
 #[derive(Debug)]
-pub struct Output {
+pub struct WaylandOutput {
     reg_name: u32,
     wl: WlOutput,
     name: Option<String>,
@@ -21,7 +21,7 @@ pub struct Output {
     color_changed: bool,
 }
 
-impl Output {
+impl WaylandOutput {
     pub fn bind(
         conn: &mut Connection<WaylandState>,
         global: &Global,
@@ -38,7 +38,7 @@ impl Output {
                         .find(|o| o.wl == ctx.proxy)
                         .unwrap();
                     let name = String::from_utf8(name.into_bytes()).expect("invalid output name");
-                    eprintln!("Output {}: name = {name:?}", output.reg_name);
+                    eprintln!("WaylandOutput {}: name = {name:?}", output.reg_name);
                     output.name = Some(name);
                 }
             })
@@ -61,13 +61,13 @@ impl Output {
                     match ctx.event {
                         zwlr_gamma_control_v1::Event::GammaSize(size) => {
                             let output = &mut ctx.state.outputs[output_index];
-                            eprintln!("Output {}: ramp_size = {}", output.reg_name, size);
+                            eprintln!("WaylandOutput {}: ramp_size = {}", output.reg_name, size);
                             output.ramp_size = size as usize;
                             output.update_displayed_color(ctx.conn).unwrap();
                         }
                         zwlr_gamma_control_v1::Event::Failed => {
                             let output = ctx.state.outputs.swap_remove(output_index);
-                            eprintln!("Output {}: gamma_control::Event::Failed", output.reg_name);
+                            eprintln!("WaylandOutput {}: gamma_control::Event::Failed", output.reg_name);
                             output.destroy(ctx.conn);
                         }
                         _ => (),
@@ -80,7 +80,7 @@ impl Output {
     }
 
     pub fn destroy(self, conn: &mut Connection<WaylandState>) {
-        eprintln!("Output {} removed", self.reg_name);
+        eprintln!("WaylandOutput {} removed", self.reg_name);
         self.gamma_control.destroy(conn);
         self.wl.release(conn);
     }

@@ -7,19 +7,19 @@ use wayrs_client::global::*;
 use wayrs_client::protocol::*;
 use wayrs_client::{Connection, IoMode};
 
-use super::{output::Output, state::WaylandState};
+use super::{output::WaylandOutput, state::WaylandState};
 
-pub struct Client {
+pub struct WaylandClient {
     conn: Connection<WaylandState>,
 }
 
-impl AsRawFd for Client {
+impl AsRawFd for WaylandClient {
     fn as_raw_fd(&self) -> RawFd {
         self.conn.as_raw_fd()
     }
 }
 
-impl Client {
+impl WaylandClient {
     pub fn new() -> Result<(Self, WaylandState)> {
         let (mut conn, globals) = Connection::connect_and_collect_globals()?;
         conn.add_registry_cb(
@@ -28,7 +28,7 @@ impl Client {
              event: &wl_registry::Event| {
                 match event {
                     wl_registry::Event::Global(global) if global.is::<WlOutput>() => {
-                        let mut output = Output::bind(conn, global, state.gamma_manager);
+                        let mut output = WaylandOutput::bind(conn, global, state.gamma_manager);
                         output.set_color(state.color());
                         output.update_displayed_color(conn).unwrap();
                         state.outputs.push(output);
@@ -53,7 +53,7 @@ impl Client {
         let outputs = globals
             .iter()
             .filter(|g| g.is::<WlOutput>())
-            .map(|output| Output::bind(&mut conn, output, gamma_manager))
+            .map(|output| WaylandOutput::bind(&mut conn, output, gamma_manager))
             .collect();
 
         let state = WaylandState {

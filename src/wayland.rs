@@ -2,4 +2,4 @@ mod client;
 mod output;
 mod state;
 
-pub use client::Client;
+pub use client::WaylandClient;

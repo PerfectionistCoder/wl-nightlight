@@ -4,21 +4,21 @@ use wayrs_protocols::wlr_gamma_control_unstable_v1::*;
 
 use crate::color::Color;
 
-use super::output::Output;
+use super::output::WaylandOutput;
 
 pub struct WaylandState {
-    pub outputs: Vec<Output>,
+    pub outputs: Vec<WaylandOutput>,
     pub gamma_manager: ZwlrGammaControlManagerV1,
 }
 
 impl WaylandState {
-    pub fn output_by_reg_name(&self, reg_name: u32) -> Option<&Output> {
+    pub fn output_by_reg_name(&self, reg_name: u32) -> Option<&WaylandOutput> {
         self.outputs
             .iter()
             .find(|output| output.reg_name() == reg_name)
     }
 
-    pub fn mut_output_by_reg_name(&mut self, reg_name: u32) -> Option<&mut Output> {
+    pub fn mut_output_by_reg_name(&mut self, reg_name: u32) -> Option<&mut WaylandOutput> {
         self.outputs
             .iter_mut()
             .find(|output| output.reg_name() == reg_name)
@@ -121,7 +121,7 @@ trait TestTraitWaylandState {}
 
 #[cfg(test)]
 struct TestWaylandState {
-    outputs: Vec<Output>,
+    outputs: Vec<WaylandOutput>,
 }
 
 #[cfg(test)]
