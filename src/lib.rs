@@ -1,12 +1,11 @@
 use std::{thread::sleep, time::Duration};
 
 use config::Config;
-use light::LightMode::{self, Dark, Light};
+use mode::LightMode::{self, Dark, Light};
 
 mod color;
 mod config;
-mod light;
-mod sun_time;
+mod mode;
 mod wayland;
 
 pub fn run() {
