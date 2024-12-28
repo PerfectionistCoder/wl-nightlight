@@ -1,4 +1,7 @@
-use std::{thread::sleep, time::Duration};
+use std::{
+    sync::{Arc, Mutex},
+    thread::{self, sleep}, time::Duration,
+};
 
 use config::Config;
 use mode::LightMode::{self, Dark, Light};
@@ -10,36 +13,20 @@ mod wayland;
 
 pub fn run() {
     let cfg = Config::new();
-    let mut time;
-    let (mut wayland, mut wayland_state) = wayland::WaylandClient::new().unwrap();
+    let (mut wayland, wayland_state) = wayland::WaylandClient::new().unwrap();
+    let state = Arc::new(Mutex::new(wayland_state));
 
+    let state1 = Arc::clone(&state);
+    thread::spawn(move || {
+        state1.lock().unwrap().change_to_color(cfg.dark_mode(), 3.0);
+    });
+    
     loop {
-        println!("{}", wayland_state.color_changed());
-
-        let mode = LightMode::get_mode(cfg.lat(), cfg.lng()).unwrap();
-        match mode {
-            Light(t) => {
-                wayland_state.change_to_color(cfg.light_mode());
-                time = t;
-            }
-            Dark(t) => {
-                wayland_state.change_to_color(cfg.dark_mode());
-                time = t;
-            }
-        };
-        sleep(Duration::from_secs_f64(0.1));
-        
-        loop {
-            if wayland.poll(&mut wayland_state).is_ok() {
-                println!("change");
-                break;
-            }
-            sleep(Duration::from_millis(50));
+        if state.lock().unwrap().color_changed() {
+            let mut state = state.lock().unwrap();
+            let _ = wayland.poll(&mut state);
         }
-
-        println!("wait {}", time);
-        println!("{:?}", wayland_state.outputs());
-        sleep(Duration::from_secs(time as u64));
+        sleep(Duration::from_millis(10));
     }
 }
 

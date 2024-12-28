@@ -1,6 +1,6 @@
 use std::{
     sync::{Arc, Mutex},
-    thread::{self, sleep},
+    thread::{self, sleep, JoinHandle},
     time::Duration,
 };
 
@@ -14,11 +14,7 @@ use wayrs_protocols::wlr_gamma_control_unstable_v1::*;
 
 use crate::color::Color;
 
-use super::output::{self, WaylandOutput};
-
-const MAX_INTERVAL: u16 = 5;
-const MIN_TEMP: u16 = 100;
-const MIN_BRIGHTNESS: f64 = 0.05;
+use super::output::WaylandOutput;
 
 pub struct WaylandState {
     outputs: Vec<Arc<Mutex<WaylandOutput>>>,
@@ -83,54 +79,182 @@ impl WaylandState {
             .any(|output| output.lock().unwrap().color_changed())
     }
 
-    pub fn change_to_color(&self, target: Color) {
+    fn calculate_interval(
+        new: f32,
+        old: f32,
+        min: f32,
+        max: f32,
+        duration: f32,
+    ) -> (i32, f32, f32) {
+        const MAX_INTERVAL_PER_SEC: f32 = 60_f32;
+
+        let diff = new - old;
+        let sign = if diff.is_sign_negative() { -1.0 } else { 1.0 };
+        let step = (diff / duration).abs().min(max).max(min) * sign;
+        let interval = (diff / step).min(duration * MAX_INTERVAL_PER_SEC).round();
+        let step = diff / interval;
+        let wait = duration / interval;
+
+        (interval as i32, step, wait)
+    }
+    pub fn change_to_color(&self, target: Color, duration: f32) -> Vec<JoinHandle<()>> {
+        const MIN_TEMP: u16 = 50;
+        const MAX_TEMP: u16 = 100;
+        const MIN_BRIGHTNESS: f64 = 0.005;
+        const MAX_BRIGHTNESS: f64 = 0.01;
+
+        let mut handles = vec![];
         for output in &self.outputs {
             let output = Arc::clone(output);
-            thread::spawn(move || {
+            handles.push(thread::spawn(move || {
+                if duration > 0.0 {
+                    let output1 = Arc::clone(&output);
+                    let output2 = Arc::clone(&output);
+                    let t1 = thread::spawn(move || {
+                        let (interval, step, wait) = WaylandState::calculate_interval(
+                            target.temp as f32,
+                            output1.lock().unwrap().color().temp as f32,
+                            MIN_TEMP as f32,
+                            MAX_TEMP as f32,
+                            duration,
+                        );
+                        for i in 0..interval {
+                            sleep(Duration::from_secs_f32(wait));
+                            if i < interval - 1 {
+                                let c = output1.lock().unwrap().color();
+                                output1.lock().unwrap().set_color(Color {
+                                    temp: (c.temp as i16 + step as i16) as u16,
+                                    ..c
+                                });
+                            }
+                        }
+                    });
+                    let t2 = thread::spawn(move || {
+                        let (interval, step, wait) = WaylandState::calculate_interval(
+                            target.brightness as f32,
+                            output2.lock().unwrap().color().brightness as f32,
+                            MIN_BRIGHTNESS as f32,
+                            MAX_BRIGHTNESS as f32,
+                            duration,
+                        );
+                        for i in 0..interval {
+                            sleep(Duration::from_secs_f32(wait));
+                            if i < interval - 1 {
+                                let c = output2.lock().unwrap().color();
+                                output2.lock().unwrap().set_color(Color {
+                                    brightness: (c.brightness + step as f64),
+                                    ..c
+                                });
+                            }
+                        }
+                    });
+                    t1.join().unwrap();
+                    t2.join().unwrap();
+                }
                 output.lock().unwrap().set_color(target);
-            });
+            }));
         }
+        handles
     }
 }
 
-// #[cfg(test)]
-// mod test {
-//     use super::*;
-//     use crate::wayland;
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::wayland;
+    use std::cmp::Ordering;
 
-//     mod test_color_change {
-//         use super::*;
+    impl PartialOrd for Color {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            if self.temp < other.temp && self.brightness < other.brightness {
+                Some(Ordering::Less)
+            } else if self.temp > other.temp && self.brightness > other.brightness {
+                Some(Ordering::Greater)
+            } else if self.temp == other.temp && self.brightness == other.brightness {
+                Some(Ordering::Equal)
+            } else {
+                None
+            }
+        }
+    }
 
-//         fn get_state() -> WaylandState {
-//             let (_, state) = wayland::WaylandClient::new().unwrap();
-//             state
-//         }
+    fn get_state() -> WaylandState {
+        let (_, state) = wayland::WaylandClient::new().unwrap();
+        state
+    }
 
-//         #[test]
-//         fn color_set_to_target() {
-//             let mut state = get_state();
-//             let target = Color {
-//                 temp: 4500,
-//                 brightness: 0.5,
-//             };
-//             state.change_to_color(target);
-//             assert_eq!(state.color(), target);
-//         }
+    mod test_instant_color_change {
+        use super::*;
 
-//         #[test]
-//         fn consecutive_call() {
-//             let mut state = get_state();
-//             let target1 = Color {
-//                 temp: 5400,
-//                 brightness: 1.0,
-//             };
-//             let target2 = Color {
-//                 temp: 4500,
-//                 brightness: 0.5,
-//             };
-//             state.change_to_color(target1);
-//             state.change_to_color(target2);
-//             assert_eq!(state.color(), target2);
-//         }
-//     }
-// }
+        fn state_helper(state: &WaylandState, target: Color) {
+            state
+                .change_to_color(target, 0_f32)
+                .into_iter()
+                .for_each(|h| h.join().unwrap());
+        }
+
+        #[test]
+        fn color_set_to_target() {
+            let state = get_state();
+            let target = Color {
+                temp: 4500,
+                brightness: 0.5,
+            };
+            state_helper(&state, target);
+            assert_eq!(state.color(), target);
+        }
+
+        #[test]
+        fn consecutive_call() {
+            let state = get_state();
+            let target1 = Color {
+                temp: 7500,
+                brightness: 0.5,
+            };
+            let target2 = Color {
+                temp: 4500,
+                brightness: 0.9,
+            };
+            let target3 = Color {
+                temp: 5500,
+                brightness: 0.7,
+            };
+
+            state_helper(&state, target1);
+            state_helper(&state, target2);
+            state_helper(&state, target3);
+
+            assert_eq!(state.color(), target3);
+        }
+    }
+
+    mod test_with_duration {
+        use super::*;
+
+        fn get_mid(color1: Color, color2: Color) -> Color {
+            Color {
+                temp: (color1.temp + color2.temp) / 2,
+                brightness: (color1.brightness + color2.brightness) / 2_f64,
+            }
+        }
+
+        #[test]
+        fn color_transition() {
+            let state = get_state();
+            let target = Color {
+                temp: 4500,
+                brightness: 0.5,
+            };
+            let time = 1_f32;
+            let handles = state.change_to_color(target, time);
+
+            sleep(Duration::from_secs_f32(time / 4_f32));
+            assert!(state.color() > get_mid(target, Color::default()));
+            sleep(Duration::from_secs_f32(time / 2_f32));
+            assert!(state.color() < get_mid(target, Color::default()));
+
+            handles.into_iter().for_each(|h| h.join().unwrap());
+            assert_eq!(state.color(), target);
+        }
+    }
+}
