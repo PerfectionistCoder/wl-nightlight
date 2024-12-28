@@ -16,6 +16,11 @@ use crate::color::Color;
 
 use super::output::WaylandOutput;
 
+const MIN_TEMP: u16 = 50;
+const MAX_TEMP: u16 = 100;
+const MIN_BRIGHTNESS: f64 = 0.005;
+const MAX_BRIGHTNESS: f64 = 0.01;
+
 pub struct WaylandState {
     outputs: Vec<Arc<Mutex<WaylandOutput>>>,
     gamma_manager: ZwlrGammaControlManagerV1,
@@ -98,11 +103,6 @@ impl WaylandState {
         (interval as i32, step, wait)
     }
     pub fn change_to_color(&self, target: Color, duration: f32) -> Vec<JoinHandle<()>> {
-        const MIN_TEMP: u16 = 50;
-        const MAX_TEMP: u16 = 100;
-        const MIN_BRIGHTNESS: f64 = 0.005;
-        const MAX_BRIGHTNESS: f64 = 0.01;
-
         let mut handles = vec![];
         for output in &self.outputs {
             let output = Arc::clone(output);
@@ -183,6 +183,18 @@ mod test {
         state
     }
 
+    mod test_default_gamma {
+        use super::*;
+
+        #[test]
+        fn default_color() {
+            assert!(get_state()
+                .outputs()
+                .iter()
+                .all(|o| o.lock().unwrap().color() == Color::default()))
+        }
+    }
+
     mod test_instant_color_change {
         use super::*;
 
@@ -194,7 +206,7 @@ mod test {
         }
 
         #[test]
-        fn color_set_to_target() {
+        fn color_decrement() {
             let state = get_state();
             let target = Color {
                 temp: 4500,
@@ -202,6 +214,18 @@ mod test {
             };
             state_helper(&state, target);
             assert_eq!(state.color(), target);
+        }
+
+        #[test]
+        fn color_increment() {
+            let state = get_state();
+            let target = Color {
+                temp: 4500,
+                brightness: 0.5,
+            };
+            state_helper(&state, target);
+            state_helper(&state, Color::default());
+            assert_eq!(state.color(), Color::default());
         }
 
         #[test]
@@ -228,33 +252,101 @@ mod test {
         }
     }
 
-    mod test_with_duration {
+    mod test_calculate_interval {
         use super::*;
 
-        fn get_mid(color1: Color, color2: Color) -> Color {
-            Color {
-                temp: (color1.temp + color2.temp) / 2,
-                brightness: (color1.brightness + color2.brightness) / 2_f64,
-            }
+        #[test]
+        fn normal() {
+            assert_eq!(
+                (10, 100.0, 1.0),
+                WaylandState::calculate_interval(1000.0, 0.0, 0.0, 1000.0, 10.0)
+            )
         }
 
         #[test]
-        fn color_transition() {
+        fn max_cap() {
+            assert_eq!(
+                (10, 100.0, 0.1),
+                WaylandState::calculate_interval(1000.0, 0.0, 0.0, 100.0, 1.0)
+            )
+        }
+
+        #[test]
+        fn min_cap() {
+            assert_eq!(
+                (2, 5.0, 5.0),
+                WaylandState::calculate_interval(10.0, 0.0, 5.0, 100.0, 10.0)
+            )
+        }
+
+        #[test]
+        fn negative_cap() {
+            assert_eq!(
+                (10, -100.0, 0.1),
+                WaylandState::calculate_interval(0.0, 1000.0, 0.0, 100.0, 1.0)
+            )
+        }
+    }
+
+    mod test_with_duration {
+        use super::*;
+
+        const TARGET: Color = Color {
+            temp: 4500,
+            brightness: 0.5,
+        };
+
+        struct Bound {
+            min: Color,
+            max: Color,
+        }
+
+        fn timeline(list: &[Option<Bound>]) {
             let state = get_state();
-            let target = Color {
-                temp: 4500,
-                brightness: 0.5,
-            };
             let time = 1_f32;
-            let handles = state.change_to_color(target, time);
-
-            sleep(Duration::from_secs_f32(time / 4_f32));
-            assert!(state.color() > get_mid(target, Color::default()));
-            sleep(Duration::from_secs_f32(time / 2_f32));
-            assert!(state.color() < get_mid(target, Color::default()));
-
+            let handles = state.change_to_color(TARGET, time);
+            let len = list.len() + 1;
+            for b in list.iter() {
+                sleep(Duration::from_secs_f32(time / len as f32));
+                if let Some(b) = b {
+                    assert!(state.color() < b.max);
+                    assert!(state.color() > b.min);
+                }
+            }
             handles.into_iter().for_each(|h| h.join().unwrap());
-            assert_eq!(state.color(), target);
+            assert_eq!(state.color(), TARGET);
+        }
+
+        #[test]
+        fn check_mid() {
+            let min = Color {
+                temp: (TARGET.temp + Color::default().temp) / 4,
+                brightness: (TARGET.brightness + Color::default().brightness) / 4_f64,
+            };
+            let max = Color {
+                temp: (TARGET.temp + Color::default().temp) / 4 * 3,
+                brightness: (TARGET.brightness + Color::default().brightness) / 4_f64 * 3_f64,
+            };
+            timeline(&[None, Some(Bound { min, max }), None]);
+        }
+
+        #[test]
+        fn check_quoter() {
+            let mid = Color {
+                temp: (TARGET.temp + Color::default().temp) / 2,
+                brightness: (TARGET.brightness + Color::default().brightness) / 2_f64,
+            };
+            timeline(&[
+                Some(Bound {
+                    min: mid,
+                    max: Color::default(),
+                }),
+                None,
+                Some(Bound {
+                    min: TARGET,
+                    max: mid,
+                }),
+            ]);
         }
     }
 }
