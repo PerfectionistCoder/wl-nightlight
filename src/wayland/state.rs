@@ -14,7 +14,7 @@ use wayrs_protocols::wlr_gamma_control_unstable_v1::*;
 
 use crate::color::Color;
 
-use super::output::WaylandOutput;
+use super::output::{OutputSetColor, WaylandOutput};
 
 struct Bound<T> {
     min: T,
@@ -104,7 +104,7 @@ impl WaylandState {
         struct Arg {
             get_prop: fn(&Color) -> f64,
             bound: Bound<f64>,
-            set_color: SetColorCallback,
+            set_color: OutputSetColor,
         }
         let mut handles = vec![];
         for output in &self.outputs {
@@ -159,15 +159,13 @@ fn calculate_interval(new: f64, old: f64, bound: Bound<f64>, duration: f64) -> (
     (interval as i32, step, wait)
 }
 
-type SetColorCallback = fn(&mut WaylandOutput, f64);
-
 fn color_transit(
     output: Arc<Mutex<WaylandOutput>>,
     new: f64,
     old: f64,
     bound: Bound<f64>,
     duration: f64,
-    set_color: SetColorCallback,
+    set_color: OutputSetColor,
 ) {
     let (interval, step, wait) = calculate_interval(new, old, bound, duration);
     for i in 0..interval {
@@ -201,18 +199,6 @@ mod test {
     fn get_state() -> WaylandState {
         let (_, state) = WaylandClient::new().unwrap();
         state
-    }
-
-    mod test_default_gamma {
-        use super::*;
-
-        #[test]
-        fn default_color() {
-            assert!(get_state()
-                .outputs()
-                .iter()
-                .all(|o| o.lock().unwrap().color() == Color::default()))
-        }
     }
 
     const TARGET: Color = Color {

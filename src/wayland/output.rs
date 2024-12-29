@@ -13,6 +13,8 @@ use crate::color::{color_ramp_fill, Color};
 
 use super::state::WaylandState;
 
+pub type OutputSetColor = fn(&mut WaylandOutput, f64);
+
 #[derive(Debug)]
 pub struct WaylandOutput {
     reg_name: u32,
@@ -32,58 +34,62 @@ impl WaylandOutput {
     ) -> Arc<Mutex<Self>> {
         eprintln!("New output: {}", global.name);
 
-        let gamma_control_cb = |ctx: EventCtx<WaylandState, ZwlrGammaControlV1>| {
-            let output_index = ctx
-                .state
-                .outputs()
-                .iter()
-                .position(|o| o.lock().unwrap().gamma_control == ctx.proxy)
-                .expect("Received event for unknown output");
-            match ctx.event {
-                zwlr_gamma_control_v1::Event::GammaSize(size) => {
-                    let output = &mut ctx.state.outputs()[output_index].lock().unwrap();
-                    eprintln!("Output {}: ramp_size = {}", output.reg_name, size);
-                    output.ramp_size = size as usize;
-                    output.update_displayed_color(ctx.conn).unwrap();
-                }
-                zwlr_gamma_control_v1::Event::Failed => {
-                    let output = ctx.state.outputs().swap_remove(output_index);
-                    eprintln!(
-                        "Output {}: gamma_control::Event::Failed",
-                        output.lock().unwrap().reg_name
-                    );
-                    Arc::try_unwrap(output)
+        let output = global
+            .bind_with_cb(conn, 4, |ctx: EventCtx<WaylandState, WlOutput>| {
+                if let wl_output::Event::Name(name) = ctx.event {
+                    let mut output = ctx
+                        .state
+                        .outputs()
+                        .iter_mut()
+                        .find(|o| o.lock().unwrap().wl == ctx.proxy)
                         .unwrap()
-                        .into_inner()
-                        .unwrap()
-                        .destroy(ctx.conn);
+                        .lock()
+                        .unwrap();
+                    let name = String::from_utf8(name.into_bytes()).expect("invalid output name");
+                    eprintln!("Output {}: name = {name:?}", output.reg_name);
+                    output.name = Some(name);
                 }
-                _ => (),
-            }
-        };
-        let wl_output_cb = |ctx: EventCtx<WaylandState, WlOutput>| {
-            if let wl_output::Event::Name(name) = ctx.event {
-                let mut output = ctx
-                    .state
-                    .outputs()
-                    .iter_mut()
-                    .find(|o| o.lock().unwrap().wl == ctx.proxy)
-                    .unwrap()
-                    .lock()
-                    .unwrap();
-                let name = String::from_utf8(name.into_bytes()).expect("invalid output name");
-                eprintln!("Output {}: name = {name:?}", output.reg_name);
-                output.name = Some(name);
-            }
-        };
+            })
+            .unwrap();
 
-        let output = global.bind_with_cb(conn, 4, wl_output_cb).unwrap();
         Arc::new(Mutex::new(Self {
             reg_name: global.name,
             wl: output,
             name: None,
             color: Color::default(),
-            gamma_control: gamma_manager.get_gamma_control_with_cb(conn, output, gamma_control_cb),
+            gamma_control: gamma_manager.get_gamma_control_with_cb(
+                conn,
+                output,
+                |ctx: EventCtx<WaylandState, ZwlrGammaControlV1>| {
+                    let output_index = ctx
+                        .state
+                        .outputs()
+                        .iter()
+                        .position(|o| o.lock().unwrap().gamma_control == ctx.proxy)
+                        .expect("Received event for unknown output");
+                    match ctx.event {
+                        zwlr_gamma_control_v1::Event::GammaSize(size) => {
+                            let output = &mut ctx.state.outputs()[output_index].lock().unwrap();
+                            eprintln!("Output {}: ramp_size = {}", output.reg_name, size);
+                            output.ramp_size = size as usize;
+                            output.update_displayed_color(ctx.conn).unwrap();
+                        }
+                        zwlr_gamma_control_v1::Event::Failed => {
+                            let output = ctx.state.outputs().swap_remove(output_index);
+                            eprintln!(
+                                "Output {}: gamma_control::Event::Failed",
+                                output.lock().unwrap().reg_name
+                            );
+                            Arc::try_unwrap(output)
+                                .unwrap()
+                                .into_inner()
+                                .unwrap()
+                                .destroy(ctx.conn);
+                        }
+                        _ => (),
+                    }
+                },
+            ),
             ramp_size: 0,
             color_changed: true,
         }))
