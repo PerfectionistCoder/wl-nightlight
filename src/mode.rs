@@ -34,7 +34,6 @@ pub fn get_mode(lat: Latitude, lng: Longitude) -> Result<LightMode> {
 mod tests {
     use super::*;
     use crate::test_utils::{get_timestamp, NAIROBI};
-
     const HOUR: i64 = 3600;
 
     mod test_light_mode_and_time_left {

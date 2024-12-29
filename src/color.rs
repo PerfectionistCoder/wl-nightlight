@@ -1,8 +1,16 @@
-/// Color parameters
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
     pub temp: u16,
     pub brightness: f64,
+}
+
+impl Color {
+    pub fn temp(&self) -> f64 {
+        self.temp as f64
+    }
+    pub fn brightness(&self) -> f64 {
+        self.brightness
+    }
 }
 
 impl Default for Color {
@@ -14,19 +22,13 @@ impl Default for Color {
     }
 }
 
-impl Color {
-    /// Returns a color with update temperature, clamping it to [1K, 10K] range, or none if
-    /// temperature could not be updated.
-    pub fn with_updated_temp(self, delta: i16) -> Option<Self> {
-        let new_temp = self.temp.saturating_add_signed(delta).clamp(1_000, 10_000);
-        (new_temp != self.temp).then_some(Self {
-            temp: new_temp,
-            ..self
-        })
-    }
-}
-
-pub fn colorramp_fill(r: &mut [u16], g: &mut [u16], b: &mut [u16], ramp_size: usize, color: Color) {
+pub fn color_ramp_fill(
+    r: &mut [u16],
+    g: &mut [u16],
+    b: &mut [u16],
+    ramp_size: usize,
+    color: Color,
+) {
     let color_i = ((color.temp as usize - 1000) / 100) * 3;
     let [white_r, white_g, white_b] = interpolate_color(
         (color.temp % 100) as f64 / 100.0,
