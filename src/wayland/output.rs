@@ -9,7 +9,7 @@ use wayrs_client::protocol::*;
 use wayrs_client::{Connection, EventCtx};
 use wayrs_protocols::wlr_gamma_control_unstable_v1::*;
 
-use crate::color::{colorramp_fill, Color};
+use crate::color::{color_ramp_fill, Color};
 
 use super::state::WaylandState;
 
@@ -42,14 +42,14 @@ impl WaylandOutput {
             match ctx.event {
                 zwlr_gamma_control_v1::Event::GammaSize(size) => {
                     let output = &mut ctx.state.outputs()[output_index].lock().unwrap();
-                    eprintln!("WaylandOutput {}: ramp_size = {}", output.reg_name, size);
+                    eprintln!("Output {}: ramp_size = {}", output.reg_name, size);
                     output.ramp_size = size as usize;
                     output.update_displayed_color(ctx.conn).unwrap();
                 }
                 zwlr_gamma_control_v1::Event::Failed => {
                     let output = ctx.state.outputs().swap_remove(output_index);
                     eprintln!(
-                        "WaylandOutput {}: gamma_control::Event::Failed",
+                        "Output {}: gamma_control::Event::Failed",
                         output.lock().unwrap().reg_name
                     );
                     Arc::try_unwrap(output)
@@ -72,7 +72,7 @@ impl WaylandOutput {
                     .lock()
                     .unwrap();
                 let name = String::from_utf8(name.into_bytes()).expect("invalid output name");
-                eprintln!("WaylandOutput {}: name = {name:?}", output.reg_name);
+                eprintln!("Output {}: name = {name:?}", output.reg_name);
                 output.name = Some(name);
             }
         };
@@ -90,7 +90,7 @@ impl WaylandOutput {
     }
 
     pub fn destroy(self, conn: &mut Connection<WaylandState>) {
-        eprintln!("WaylandOutput {} removed", self.reg_name);
+        eprintln!("Output {} removed", self.reg_name);
         self.gamma_control.destroy(conn);
         self.wl.release(conn);
     }
@@ -114,6 +114,17 @@ impl WaylandOutput {
         }
     }
 
+    pub fn set_temp(&mut self, step: f64) {
+        let old = self.color().temp;
+        self.color.temp = ((old as i16) + (step as i16)) as u16;
+        self.color_changed = true;
+    }
+
+    pub fn set_brightness(&mut self, step: f64) {
+        self.color.brightness = self.color().brightness + step;
+        self.color_changed = true;
+    }
+
     pub fn update_displayed_color(&mut self, conn: &mut Connection<WaylandState>) -> Result<()> {
         if self.ramp_size == 0 {
             return Ok(());
@@ -125,7 +136,7 @@ impl WaylandOutput {
         let buf = bytemuck::cast_slice_mut::<u8, u16>(&mut mmap);
         let (r, rest) = buf.split_at_mut(self.ramp_size);
         let (g, b) = rest.split_at_mut(self.ramp_size);
-        colorramp_fill(r, g, b, self.ramp_size, self.color);
+        color_ramp_fill(r, g, b, self.ramp_size, self.color);
         self.gamma_control.set_gamma(conn, file.into());
 
         self.color_changed = false;
