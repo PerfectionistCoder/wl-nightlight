@@ -1,6 +1,6 @@
 use crate::config::{Latitude, Longitude};
 
-use sun_time::{get_current_timestamp, SunTime, Timestamp};
+use sun_time::{calculate_sun_time, get_current_timestamp, Timestamp};
 
 use anyhow::Result;
 
@@ -15,21 +15,19 @@ pub enum LightMode {
     Dark(Timestamp),
 }
 
-impl LightMode {
-    fn decide_mode(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self> {
-        let sun_time = SunTime::calculate(lat, lng, timestamp)?;
-        Ok(
-            if sun_time.sunrise() < timestamp && timestamp < sun_time.sunset() {
-                LightMode::Light(sun_time.sunset() - timestamp)
-            } else {
-                LightMode::Dark(sun_time.sunrise() - timestamp)
-            },
-        )
-    }
-    pub fn get_mode(lat: Latitude, lng: Longitude) -> Result<Self> {
-        let now = get_current_timestamp()?;
-        LightMode::decide_mode(lat, lng, now)
-    }
+fn decide_mode(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<LightMode> {
+    let sun_time = calculate_sun_time(lat, lng, timestamp)?;
+    Ok(
+        if sun_time.sunrise() < timestamp && timestamp < sun_time.sunset() {
+            LightMode::Light(sun_time.sunset() - timestamp)
+        } else {
+            LightMode::Dark(sun_time.sunrise() - timestamp)
+        },
+    )
+}
+pub fn get_mode(lat: Latitude, lng: Longitude) -> Result<LightMode> {
+    let now = get_current_timestamp()?;
+    decide_mode(lat, lng, now)
 }
 
 #[cfg(test)]
@@ -46,7 +44,7 @@ mod tests {
         fn noon() {
             let timestamp = get_timestamp(6, 12, NAIROBI.offset);
             if let LightMode::Light(time_left) =
-                LightMode::decide_mode(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap()
+                decide_mode(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap()
             {
                 assert!((time_left - 6 * HOUR).abs() < HOUR)
             } else {
@@ -58,7 +56,7 @@ mod tests {
         fn early_morning() {
             let timestamp = get_timestamp(6, 3, NAIROBI.offset);
             if let LightMode::Dark(time_left) =
-                LightMode::decide_mode(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap()
+                decide_mode(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap()
             {
                 assert!((time_left - 3 * HOUR).abs() < HOUR)
             } else {
@@ -70,7 +68,7 @@ mod tests {
         fn late_night() {
             let timestamp = get_timestamp(6, 22, NAIROBI.offset);
             if let LightMode::Dark(time_left) =
-                LightMode::decide_mode(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap()
+                decide_mode(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap()
             {
                 assert!((time_left - 8 * HOUR).abs() < HOUR)
             } else {

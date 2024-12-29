@@ -1,7 +1,10 @@
 use std::{thread::sleep, time::Duration};
 
 use config::Config;
-use mode::LightMode::{self, Dark, Light};
+use mode::{
+    get_mode,
+    LightMode::{Dark, Light},
+};
 
 mod color;
 mod config;
@@ -16,7 +19,7 @@ pub fn run() {
     loop {
         println!("{}", wayland_state.color_changed());
 
-        let mode = LightMode::get_mode(cfg.lat(), cfg.lng()).unwrap();
+        let mode = get_mode(cfg.lat(), cfg.lng()).unwrap();
         wayland_state = match mode {
             Light(t) => {
                 let s = wayland_state.change_to_color(cfg.light_mode(), 0);
