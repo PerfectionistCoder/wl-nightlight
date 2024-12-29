@@ -120,9 +120,9 @@ impl WaylandOutput {
         }
     }
 
-    pub fn set_temp(&mut self, step: f64) {
-        let old = self.color().temp;
-        self.color.temp = ((old as i16) + (step as i16)) as u16;
+    pub fn set_temperature(&mut self, step: f64) {
+        let old = self.color().temperature;
+        self.color.temperature = ((old as i16) + (step as i16)) as u16;
         self.color_changed = true;
     }
 

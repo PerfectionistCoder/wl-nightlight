@@ -60,19 +60,19 @@ impl WaylandState {
             let color = self.outputs.iter().fold(
                 Color {
                     brightness: 0.0,
-                    temp: 0,
+                    temperature: 0,
                 },
                 |color, output| {
                     let output_color = output.lock().unwrap().color();
                     Color {
                         brightness: color.brightness + output_color.brightness,
-                        temp: color.temp + output_color.temp,
+                        temperature: color.temperature + output_color.temperature,
                     }
                 },
             );
 
             Color {
-                temp: color.temp / self.outputs.len() as u16,
+                temperature: color.temperature / self.outputs.len() as u16,
                 brightness: color.brightness / self.outputs.len() as f64,
             }
         }
@@ -92,12 +92,12 @@ impl WaylandState {
         }
 
         struct ColorBound {
-            temp: Bound<f64>,
+            temperature: Bound<f64>,
             brightness: Bound<f64>,
         }
 
         const COLOR_BOUND: ColorBound = ColorBound {
-            temp: Bound {
+            temperature: Bound {
                 min: 50.0,
                 max: 100.0,
             },
@@ -108,9 +108,9 @@ impl WaylandState {
         };
         const ARGS: [Arg; 2] = [
             Arg {
-                property: Color::temp,
-                bound: COLOR_BOUND.temp,
-                callback: WaylandOutput::set_temp,
+                property: Color::temperature,
+                bound: COLOR_BOUND.temperature,
+                callback: WaylandOutput::set_temperature,
             },
             Arg {
                 property: Color::brightness,
@@ -184,11 +184,11 @@ mod test {
 
     impl PartialOrd for Color {
         fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            if self.temp < other.temp && self.brightness < other.brightness {
+            if self.temperature < other.temperature && self.brightness < other.brightness {
                 Some(Ordering::Less)
-            } else if self.temp > other.temp && self.brightness > other.brightness {
+            } else if self.temperature > other.temperature && self.brightness > other.brightness {
                 Some(Ordering::Greater)
-            } else if self.temp == other.temp && self.brightness == other.brightness {
+            } else if self.temperature == other.temperature && self.brightness == other.brightness {
                 Some(Ordering::Equal)
             } else {
                 None
@@ -202,12 +202,12 @@ mod test {
     }
 
     const TARGET: Color = Color {
-        temp: 4500,
+        temperature: 4500,
         brightness: 0.5,
     };
 
     const ORIGINAL: Color = Color {
-        temp: 6500,
+        temperature: 6500,
         brightness: 1.0,
     };
 
@@ -241,15 +241,15 @@ mod test {
         fn consecutive_call() {
             let state = get_state();
             let target1 = Color {
-                temp: 7500,
+                temperature: 7500,
                 brightness: 0.5,
             };
             let target2 = Color {
-                temp: 5500,
+                temperature: 5500,
                 brightness: 0.9,
             };
             let target3 = Color {
-                temp: 8500,
+                temperature: 8500,
                 brightness: 0.7,
             };
 
@@ -350,14 +350,14 @@ mod test {
 
         #[test]
         fn check_mid() {
-            let temp_diff = ORIGINAL.temp - TARGET.temp;
+            let temperature_diff = ORIGINAL.temperature - TARGET.temperature;
             let brightness_diff = ORIGINAL.brightness - TARGET.brightness;
             let min = Color {
-                temp: TARGET.temp + temp_diff / 4,
+                temperature: TARGET.temperature + temperature_diff / 4,
                 brightness: TARGET.brightness + brightness_diff / 4_f64,
             };
             let max = Color {
-                temp: TARGET.temp + temp_diff / 4 * 3,
+                temperature: TARGET.temperature + temperature_diff / 4 * 3,
                 brightness: TARGET.brightness + brightness_diff / 4_f64 * 3_f64,
             };
             timeline(&[None, Some(Bound { min, max }), None]);
@@ -366,7 +366,7 @@ mod test {
         #[test]
         fn check_quoter() {
             let mid = Color {
-                temp: (TARGET.temp + ORIGINAL.temp) / 2,
+                temperature: (TARGET.temperature + ORIGINAL.temperature) / 2,
                 brightness: (TARGET.brightness + ORIGINAL.brightness) / 2_f64,
             };
             timeline(&[

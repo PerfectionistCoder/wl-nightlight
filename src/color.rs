@@ -1,12 +1,12 @@
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Color {
-    pub temp: u16,
+    pub temperature: u16,
     pub brightness: f64,
 }
 
 impl Color {
-    pub fn temp(&self) -> f64 {
-        self.temp as f64
+    pub fn temperature(&self) -> f64 {
+        self.temperature as f64
     }
     pub fn brightness(&self) -> f64 {
         self.brightness
@@ -16,7 +16,7 @@ impl Color {
 impl Default for Color {
     fn default() -> Self {
         Self {
-            temp: 6500,
+            temperature: 6500,
             brightness: 1.0,
         }
     }
@@ -29,9 +29,9 @@ pub fn color_ramp_fill(
     ramp_size: usize,
     color: Color,
 ) {
-    let color_i = ((color.temp as usize - 1000) / 100) * 3;
+    let color_i = ((color.temperature as usize - 1000) / 100) * 3;
     let [white_r, white_g, white_b] = interpolate_color(
-        (color.temp % 100) as f64 / 100.0,
+        (color.temperature % 100) as f64 / 100.0,
         &BLACKBODY_COLOR[color_i..],
         &BLACKBODY_COLOR[(color_i + 3)..],
     );
