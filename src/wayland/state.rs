@@ -21,22 +21,6 @@ struct Bound<T> {
     max: T,
 }
 
-struct ColorBound {
-    temp: Bound<f64>,
-    brightness: Bound<f64>,
-}
-
-const COLOR_BOUND: ColorBound = ColorBound {
-    temp: Bound {
-        min: 50.0,
-        max: 100.0,
-    },
-    brightness: Bound {
-        min: 0.005,
-        max: 0.01,
-    },
-};
-
 pub struct WaylandState {
     outputs: Vec<Arc<Mutex<WaylandOutput>>>,
     gamma_manager: ZwlrGammaControlManagerV1,
@@ -102,40 +86,56 @@ impl WaylandState {
 
     pub fn change_to_color(&self, target: Color, duration: f64) -> Vec<JoinHandle<()>> {
         struct Arg {
-            get_prop: fn(&Color) -> f64,
+            property: fn(&Color) -> f64,
             bound: Bound<f64>,
-            set_color: OutputSetColor,
+            callback: OutputSetColor,
         }
+
+        struct ColorBound {
+            temp: Bound<f64>,
+            brightness: Bound<f64>,
+        }
+
+        const COLOR_BOUND: ColorBound = ColorBound {
+            temp: Bound {
+                min: 50.0,
+                max: 100.0,
+            },
+            brightness: Bound {
+                min: 0.005,
+                max: 0.01,
+            },
+        };
+        const ARGS: [Arg; 2] = [
+            Arg {
+                property: Color::temp,
+                bound: COLOR_BOUND.temp,
+                callback: WaylandOutput::set_temp,
+            },
+            Arg {
+                property: Color::brightness,
+                bound: COLOR_BOUND.brightness,
+                callback: WaylandOutput::set_brightness,
+            },
+        ];
+
         let mut handles = vec![];
         for output in &self.outputs {
             let output = Arc::clone(output);
             handles.push(thread::spawn(move || {
                 if duration > 0.0 {
-                    let args = [
-                        Arg {
-                            get_prop: Color::temp,
-                            bound: COLOR_BOUND.temp,
-                            set_color: WaylandOutput::set_temp,
-                        },
-                        Arg {
-                            get_prop: Color::brightness,
-                            bound: COLOR_BOUND.brightness,
-                            set_color: WaylandOutput::set_brightness,
-                        },
-                    ];
-
                     let mut handles = vec![];
-                    for arg in args {
+                    for arg in ARGS {
                         let output = Arc::clone(&output);
                         let color = output.lock().unwrap().color();
                         handles.push(thread::spawn(move || {
                             color_transit(
                                 output,
-                                (arg.get_prop)(&target),
-                                (arg.get_prop)(&color),
+                                (arg.property)(&target),
+                                (arg.property)(&color),
                                 arg.bound,
                                 duration,
-                                arg.set_color,
+                                arg.callback,
                             );
                         }));
                     }
@@ -165,13 +165,13 @@ fn color_transit(
     old: f64,
     bound: Bound<f64>,
     duration: f64,
-    set_color: OutputSetColor,
+    callback: OutputSetColor,
 ) {
     let (interval, step, wait) = calculate_interval(new, old, bound, duration);
     for i in 0..interval {
         sleep(Duration::from_secs_f64(wait));
         if i < interval - 1 {
-            set_color(&mut output.lock().unwrap(), step);
+            callback(&mut output.lock().unwrap(), step);
         }
     }
 }
