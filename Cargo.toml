@@ -7,6 +7,7 @@ edition = "2021"
 anyhow = "1.0"
 bytemuck = "1.13"
 memmap2 = "0.9"
+rust-ini = "0.21.1"
 shmemfdrs2 = "1.0"
 wayrs-client = "1.0"
 wayrs-protocols = { version = "0.14", features = [
@@ -15,3 +16,4 @@ wayrs-protocols = { version = "0.14", features = [
 
 [dev-dependencies]
 chrono = "0.4.39"
+rand = "0.8.5"
