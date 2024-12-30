@@ -16,3 +16,4 @@ wayrs-protocols = { version = "0.14", features = [
 
 [dev-dependencies]
 chrono = "0.4.39"
+rand = "0.8.5"
