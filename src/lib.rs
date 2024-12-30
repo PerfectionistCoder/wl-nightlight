@@ -28,6 +28,3 @@ pub fn run() {
         sleep(Duration::from_millis(10));
     }
 }
-
-#[cfg(test)]
-mod test_utils;

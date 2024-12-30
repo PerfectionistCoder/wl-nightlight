@@ -1,15 +1,14 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::Result;
-
-use crate::config::{Latitude, Longitude};
 use sun_time::{SunTime, Timestamp};
 
-#[cfg(test)]
-pub(crate) mod sun_time;
+use crate::config::{Latitude, Longitude};
 
-#[cfg(not(test))]
 mod sun_time;
+
+#[cfg(test)]
+mod test_utils;
 
 #[derive(Debug, PartialEq, Eq)]
 enum LightMode {
@@ -51,8 +50,8 @@ impl ModeTimer {
 
 #[cfg(test)]
 mod tests {
+    use super::test_utils::*;
     use super::*;
-    use crate::test_utils::{get_timestamp, NAIROBI};
 
     const HOUR: i64 = 3600;
 

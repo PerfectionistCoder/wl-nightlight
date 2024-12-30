@@ -68,8 +68,8 @@ impl SunTime {
 
 #[cfg(test)]
 mod tests {
+    use super::super::test_utils::*;
     use super::*;
-    use crate::test_utils::{get_datetime, get_timestamp, SunTimeDate, LONDON, NAIROBI};
     use chrono::*;
 
     mod test_sun_time_date {
