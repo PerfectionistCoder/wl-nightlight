@@ -5,7 +5,18 @@ use ini::{Ini, Properties};
 
 use crate::color::Color;
 
-pub type Transition = f32;
+pub trait Check {
+    fn check(&self) -> Result<()>;
+
+    fn in_range<T: PartialOrd>(value: T, min: T, max: T) -> Result<()> {
+        if min <= value && value <= max {
+            Ok(())
+        } else {
+            bail!("");
+        }
+    }
+}
+
 pub type Latitude = f64;
 pub type Longitude = Latitude;
 
@@ -15,11 +26,48 @@ struct Location {
     lng: Longitude,
 }
 
+impl Check for Location {
+    fn check(&self) -> Result<()> {
+        Self::in_range(self.lat, -90.0, 90.0)?;
+        Self::in_range(self.lng, -180.0, 180.0)?;
+        Ok(())
+    }
+}
+
+pub type Transition = f32;
+
+#[derive(Debug, PartialEq)]
+struct Animation {
+    transition: Transition,
+}
+
+impl Default for Animation {
+    fn default() -> Self {
+        Self { transition: 3.0 }
+    }
+}
+
+impl Check for Animation {
+    fn check(&self) -> Result<()> {
+        Self::in_range(self.transition, 0.0, 3600.0)?;
+        Ok(())
+    }
+}
+
+impl Check for Color {
+    fn check(&self) -> Result<()> {
+        Self::in_range(self.temperature, 1000, 10000)?;
+        Self::in_range(self.brightness, 0.0, 1.0)?;
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub struct Config {
     light_mode: Color,
     dark_mode: Color,
     location: Location,
+    animation: Animation,
 }
 
 impl Config {
@@ -34,13 +82,16 @@ impl Config {
 
     fn parse_ini(file: Ini) -> Result<Self> {
         let light_mode = match file.section(Some("light")) {
-            Some(section) => read_light_dark(section, Color::default())?,
+            Some(section) => parse_light_dark(section, Color::default())?,
             None => Color::default(),
         };
+        light_mode.check()?;
         let dark_mode = match file.section(Some("dark")) {
-            Some(section) => read_light_dark(section, light_mode)?,
+            Some(section) => parse_light_dark(section, light_mode)?,
             None => light_mode,
         };
+        dark_mode.check()?;
+
         let location = match file.section(Some("location")) {
             Some(section) => {
                 let lat = section.get("lat").ok_or(Error::msg(""))?.parse()?;
@@ -49,10 +100,23 @@ impl Config {
             }
             None => bail!(""),
         };
+        location.check()?;
+
+        let animation = match file.section(Some("animation")) {
+            Some(section) => {
+                let mut default = Animation::default();
+                try_parse(section, "transition", |v| default.transition = v)?;
+                default
+            }
+            None => Animation::default(),
+        };
+        animation.check()?;
+
         Ok(Self {
             light_mode,
             dark_mode,
             location,
+            animation,
         })
     }
 
@@ -65,13 +129,13 @@ impl Config {
     }
 }
 
-fn read_light_dark(section: &Properties, mut default: Color) -> Result<Color> {
-    append_color(section, "temperature", |v| default.temperature = v)?;
-    append_color(section, "brightness", |v| default.brightness = v)?;
+fn parse_light_dark(section: &Properties, mut default: Color) -> Result<Color> {
+    try_parse(section, "temperature", |v| default.temperature = v)?;
+    try_parse(section, "brightness", |v| default.brightness = v)?;
     Ok(default)
 }
 
-fn append_color<T, F>(section: &Properties, name: &str, closure: T) -> Result<(), F::Err>
+fn try_parse<T, F>(section: &Properties, name: &str, closure: T) -> Result<(), F::Err>
 where
     T: FnOnce(F),
     F: FromStr,
@@ -87,18 +151,24 @@ where
 mod tests {
     use super::*;
 
-    fn get_file_name(name: &str) -> String {
-        "test-cfg/test-".to_owned() + name + ".ini"
+    fn setup(name: &str, write: impl FnOnce(&mut Ini), assert: impl FnOnce(Config)) {
+        let file_name = &("test-cfg/test-".to_owned() + name + ".ini");
+        let mut conf = Ini::new();
+        write(&mut conf);
+        conf.write_to_file(file_name).unwrap();
+
+        let file = Ini::load_from_file(file_name).unwrap();
+        let cfg = Config::parse_ini(file).unwrap();
+        assert(cfg);
     }
+
+    const DISCARD_WRITE: fn(&mut Ini) = |_| {};
+    const DISCARD_ASSERT: fn(Config) = |_| {};
 
     #[test]
     #[should_panic]
     fn empty() {
-        let file_name = &get_file_name("empty");
-        Ini::new().write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        Config::parse_ini(file).unwrap();
+        setup("empty", DISCARD_WRITE, DISCARD_ASSERT);
     }
 
     fn write_location(conf: &mut Ini, location: Option<&Location>) {
@@ -108,6 +178,147 @@ mod tests {
             .set("lng", location.lng.to_string());
     }
 
+    #[test]
+    fn minimal() {
+        let location = Location {
+            lat: 51.51,
+            lng: -0.12,
+        };
+
+        setup(
+            "minimal",
+            |conf| {
+                write_location(conf, Some(&location));
+            },
+            |cfg| {
+                assert_eq!(cfg.location, location);
+                assert_eq!(cfg.light_mode, Color::default());
+                assert_eq!(cfg.dark_mode, Color::default());
+                assert_eq!(cfg.animation, Animation::default());
+            },
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn partial_location_1() {
+        setup(
+            "location_1",
+            |conf| {
+                conf.with_section(Some("location")).set("lat", "90");
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn partial_location_2() {
+        setup(
+            "location_2",
+            |conf| {
+                conf.with_section(Some("location")).set("lng", "-180");
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn invalid_location_1() {
+        setup(
+            "location_3",
+            |conf| {
+                conf.with_section(Some("location")).set("lat", "invalid");
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn invalid_location_2() {
+        setup(
+            "location_4",
+            |conf| {
+                conf.with_section(Some("location")).set("lng", "invalid");
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn location_out_of_range_1() {
+        setup(
+            "location_5",
+            |conf| {
+                write_location(
+                    conf,
+                    Some(&Location {
+                        lat: -91.0,
+                        lng: 0.0,
+                    }),
+                );
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn location_out_of_range_2() {
+        setup(
+            "location_6",
+            |conf| {
+                write_location(
+                    conf,
+                    Some(&Location {
+                        lat: 91.0,
+                        lng: 0.0,
+                    }),
+                );
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn location_out_of_range_3() {
+        setup(
+            "location_7",
+            |conf| {
+                write_location(
+                    conf,
+                    Some(&Location {
+                        lat: 0.0,
+                        lng: -181.0,
+                    }),
+                );
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn location_out_of_range_4() {
+        setup(
+            "location_8",
+            |conf| {
+                write_location(
+                    conf,
+                    Some(&Location {
+                        lat: 0.0,
+                        lng: 181.0,
+                    }),
+                );
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
     fn write_mode(conf: &mut Ini, section: &str, color: &Color) {
         conf.with_section(Some(section))
             .set("temperature", color.temperature.to_string())
@@ -115,166 +326,181 @@ mod tests {
     }
 
     #[test]
-    fn minimal() {
-        let file_name = &get_file_name("minimal");
-        let mut conf = Ini::new();
-        write_location(&mut conf, None);
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        Config::parse_ini(file).unwrap();
-    }
-
-    #[test]
-    fn location_only() {
-        let location = Location {
-            lat: 51.51,
-            lng: -0.12,
-        };
-
-        let file_name = &get_file_name("location");
-        let mut conf = Ini::new();
-        write_location(&mut conf, Some(&location));
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        let cfg = Config::parse_ini(file).unwrap();
-        assert_eq!(cfg.location, location);
-        assert_eq!(cfg.light_mode, Color::default());
-        assert_eq!(cfg.dark_mode, Color::default());
-    }
-
-    #[test]
-    #[should_panic]
-    fn partial_location() {
-        let file_name = &get_file_name("location_1");
-        let mut conf = Ini::new();
-        conf.with_section(Some("location")).set("lat", "0");
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        Config::parse_ini(file).unwrap();
-    }
-
-    #[test]
-    #[should_panic]
-    fn invalid_location() {
-        let file_name = &get_file_name("location_2");
-        let mut conf = Ini::new();
-        conf.with_section(Some("location"))
-            .set("lat", "hello")
-            .set("lng", "world");
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        Config::parse_ini(file).unwrap();
-    }
-
-    #[test]
-    fn location_light_mode() {
+    fn light() {
         let color = Color {
-            temperature: 1234,
+            temperature: 5000,
             brightness: 0.5,
         };
 
-        let file_name = &get_file_name("light");
-        let mut conf = Ini::new();
-        write_location(&mut conf, None);
-        write_mode(&mut conf, "light", &color);
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        let cfg = Config::parse_ini(file).unwrap();
-        assert_eq!(cfg.light_mode, color);
-        assert_eq!(cfg.dark_mode, color);
+        setup(
+            "light_1",
+            |conf| {
+                write_location(conf, None);
+                write_mode(conf, "light", &color);
+            },
+            |cfg| {
+                assert_eq!(cfg.light_mode, color);
+                assert_eq!(cfg.dark_mode, color);
+            },
+        );
     }
 
     #[test]
     fn partial_light() {
-        let brightness = 0.8;
+        let brightness = 0.5;
 
-        let file_name = &get_file_name("light_1");
-        let mut conf = Ini::new();
-        write_location(&mut conf, None);
-        conf.with_section(Some("light"))
-            .set("brightness", brightness.to_string());
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        let cfg = Config::parse_ini(file).unwrap();
-        assert_eq!(cfg.light_mode.brightness, brightness);
-        assert_eq!(cfg.dark_mode.temperature, Color::default().temperature);
+        setup(
+            "light_2",
+            |conf| {
+                write_location(conf, None);
+                conf.with_section(Some("light"))
+                    .set("brightness", brightness.to_string());
+            },
+            |cfg| {
+                assert_eq!(cfg.light_mode.brightness, brightness);
+                assert_eq!(cfg.dark_mode.temperature, Color::default().temperature);
+            },
+        );
     }
 
     #[test]
     #[should_panic]
     fn invalid_light() {
-        let file_name = &get_file_name("light_2");
-        let mut conf = Ini::new();
-        write_location(&mut conf, None);
-        conf.with_section(Some("light")).set("temperature", "hi");
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        Config::parse_ini(file).unwrap();
+        setup(
+            "light_3",
+            |conf| {
+                conf.with_section(Some("light"))
+                    .set("temperature", "invalid");
+            },
+            DISCARD_ASSERT,
+        );
     }
 
     #[test]
-    fn location_light_dark_mode() {
+    #[should_panic]
+    fn light_out_of_range_1() {
+        setup(
+            "light_4",
+            |conf| {
+                conf.with_section(Some("light")).set("temperature", "999");
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn light_out_of_range_2() {
+        setup(
+            "light_5",
+            |conf| {
+                conf.with_section(Some("light")).set("temperature", "10001");
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    fn dark() {
         let color1 = Color {
-            temperature: 1234,
-            brightness: 0.5,
+            temperature: 1000,
+            brightness: 0.0,
         };
         let color2 = Color {
-            temperature: 6789,
+            temperature: 10000,
             brightness: 1.0,
         };
 
-        let file_name = &get_file_name("light_dark");
-        let mut conf = Ini::new();
-        write_location(&mut conf, None);
-        write_mode(&mut conf, "light", &color1);
-        write_mode(&mut conf, "dark", &color2);
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        let cfg = Config::parse_ini(file).unwrap();
-        assert_eq!(cfg.light_mode, color1);
-        assert_eq!(cfg.dark_mode, color2);
+        setup(
+            "dark_1",
+            |conf| {
+                write_location(conf, None);
+                write_mode(conf, "light", &color1);
+                write_mode(conf, "dark", &color2);
+            },
+            |cfg| {
+                assert_eq!(cfg.light_mode, color1);
+                assert_eq!(cfg.dark_mode, color2);
+            },
+        );
     }
 
     #[test]
     fn partial_dark() {
         let color = Color {
-            temperature: 1234,
+            temperature: 5000,
             brightness: 0.5,
         };
-        let temperature = 4567;
+        let temperature = 4000;
 
-        let file_name = &get_file_name("dark_1");
-        let mut conf = Ini::new();
-        write_location(&mut conf, None);
-        write_mode(&mut conf, "light", &color);
-        conf.with_section(Some("dark"))
-            .set("temperature", temperature.to_string());
-        conf.write_to_file(file_name).unwrap();
-
-        let file = Ini::load_from_file(file_name).unwrap();
-        let cfg = Config::parse_ini(file).unwrap();
-        assert_eq!(cfg.dark_mode.temperature, temperature);
-        assert_eq!(cfg.dark_mode.brightness, color.brightness);
+        setup(
+            "dark_2",
+            |conf| {
+                write_location(conf, None);
+                write_mode(conf, "light", &color);
+                conf.with_section(Some("dark"))
+                    .set("temperature", temperature.to_string());
+            },
+            |cfg| {
+                assert_eq!(cfg.dark_mode.temperature, temperature);
+                assert_eq!(cfg.dark_mode.brightness, color.brightness);
+            },
+        );
     }
 
     #[test]
     #[should_panic]
     fn invalid_dark() {
-        let file_name = &get_file_name("dark_2");
-        let mut conf = Ini::new();
-        write_location(&mut conf, None);
-        conf.with_section(Some("dark")).set("brightness", "hi");
-        conf.write_to_file(file_name).unwrap();
+        setup(
+            "dark_3",
+            |conf| {
+                write_location(conf, None);
+                conf.with_section(Some("dark")).set("brightness", "invalid");
+            },
+            DISCARD_ASSERT,
+        );
+    }
 
-        let file = Ini::load_from_file(file_name).unwrap();
-        Config::parse_ini(file).unwrap();
+    #[test]
+    fn animation() {
+        let transition = 10.0;
+
+        setup(
+            "animation_1",
+            |conf| {
+                write_location(conf, None);
+                conf.with_section(Some("animation"))
+                    .set("transition", transition.to_string());
+            },
+            |cfg| {
+                assert_eq!(cfg.animation.transition, transition);
+            },
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn invalid_animation() {
+        setup(
+            "animation_2",
+            |conf| {
+                write_location(conf, None);
+                conf.with_section(Some("animation")).set("transition", "invalid");
+            },
+            DISCARD_ASSERT,
+        );
+    }
+
+    #[test]
+    #[should_panic]
+    fn animation_out_of_range() {
+        setup(
+            "animation_3",
+            |conf| {
+                write_location(conf, None);
+                conf.with_section(Some("animation")).set("transition", "-1");
+            },
+            DISCARD_ASSERT,
+        );
     }
 }
