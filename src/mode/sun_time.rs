@@ -4,6 +4,8 @@ use crate::config::{Latitude, Longitude};
 
 pub type Timestamp = i64;
 
+type Precision = f64;
+
 #[derive(Debug)]
 pub struct SunTime {
     sunrise: Timestamp,
@@ -12,9 +14,9 @@ pub struct SunTime {
 
 impl SunTime {
     pub fn new(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Result<Self> {
-        const FULL_CIRCLE: f64 = 360_f64;
+        const FULL_CIRCLE: Precision = 360.0;
 
-        let j_date = timestamp as f64 / 86400.0 + 2440587.5;
+        let j_date = timestamp as Precision / 86400.0 + 2440587.5;
 
         let n = (j_date - (2451545.0 + 0.0009) + 69.184 / 86400.0).ceil();
 
@@ -23,18 +25,18 @@ impl SunTime {
         let m_degrees = (357.5291 + 0.98560028 * j_) % FULL_CIRCLE;
         let m_radians = m_degrees.to_radians();
         let c_degrees = 1.9148 * m_radians.sin()
-            + 0.02 * (2_f64 * m_radians).sin()
-            + 0.0003 * (3_f64 * m_radians).sin();
+            + 0.02 * ((2 as Precision) * m_radians).sin()
+            + 0.0003 * ((3 as Precision) * m_radians).sin();
 
         let l_degrees = (m_degrees + c_degrees + 180.0 + 102.9372) % FULL_CIRCLE;
         let lambda_radians = l_degrees.to_radians();
 
-        let j_transit =
-            2451545.0 + j_ + 0.0053 * m_radians.sin() - 0.0069 * (2_f64 * lambda_radians).sin();
+        let j_transit = 2451545.0 + j_ + 0.0053 * m_radians.sin()
+            - 0.0069 * ((2 as Precision) * lambda_radians).sin();
 
-        let sin_d = lambda_radians.sin() * 23.4397_f64.to_radians().sin();
+        let sin_d = lambda_radians.sin() * (23.4397 as Precision).to_radians().sin();
         let cos_d = sin_d.asin().cos();
-        let some_cos = (-0.833_f64.to_radians().sin() - lat.to_radians().sin() * sin_d)
+        let some_cos = ((-0.833 as Precision).to_radians().sin() - lat.to_radians().sin() * sin_d)
             / (lat.to_radians().cos() * cos_d);
 
         let w0_radians = some_cos.acos();
@@ -44,7 +46,7 @@ impl SunTime {
         let w0_degrees = w0_radians.to_degrees();
 
         fn j_day_to_timestamp(j: f64) -> Timestamp {
-            ((j - 2440587.5) * 86400_f64).round() as Timestamp
+            ((j - 2440587.5) * (86400 as Precision)).round() as Timestamp
         }
         let j_rise = j_transit - w0_degrees / FULL_CIRCLE;
         let j_set = j_transit + w0_degrees / FULL_CIRCLE;

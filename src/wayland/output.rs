@@ -13,8 +13,6 @@ use crate::color::{color_ramp_fill, Color};
 
 use super::state::WaylandState;
 
-pub type OutputSetColor = fn(&mut WaylandOutput, f64);
-
 #[derive(Debug)]
 pub struct WaylandOutput {
     reg_name: u32,
@@ -118,17 +116,6 @@ impl WaylandOutput {
             self.color = color;
             self.color_changed = true;
         }
-    }
-
-    pub fn set_temperature(&mut self, step: f64) {
-        let old = self.color().temperature;
-        self.color.temperature = ((old as i16) + (step as i16)) as u16;
-        self.color_changed = true;
-    }
-
-    pub fn set_brightness(&mut self, step: f64) {
-        self.color.brightness = self.color().brightness + step;
-        self.color_changed = true;
     }
 
     pub fn update_displayed_color(&mut self, conn: &mut Connection<WaylandState>) -> Result<()> {

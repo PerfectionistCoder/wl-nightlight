@@ -12,9 +12,12 @@ use wayrs_client::{
 };
 use wayrs_protocols::wlr_gamma_control_unstable_v1::*;
 
-use crate::color::Color;
+use crate::{
+    color::{Brightness, Color, Temperature},
+    config::Transition,
+};
 
-use super::output::{OutputSetColor, WaylandOutput};
+use super::output::WaylandOutput;
 
 struct Bound<T> {
     min: T,
@@ -72,8 +75,8 @@ impl WaylandState {
             );
 
             Color {
-                temperature: color.temperature / self.outputs.len() as u16,
-                brightness: color.brightness / self.outputs.len() as f64,
+                temperature: color.temperature / self.outputs.len() as Temperature,
+                brightness: color.brightness / self.outputs.len() as Brightness,
             }
         }
     }
@@ -84,10 +87,10 @@ impl WaylandState {
             .any(|output| output.lock().unwrap().color_changed())
     }
 
-    pub fn change_to_color(&self, target: Color, duration: f64) -> Vec<JoinHandle<()>> {
+    pub fn change_to_color(&self, target: Color, transition: Transition) -> Vec<JoinHandle<()>> {
         struct ColorBound {
-            temperature: Bound<f64>,
-            brightness: Bound<f64>,
+            temperature: Bound<Precision>,
+            brightness: Bound<Precision>,
         }
 
         const COLOR_BOUND: ColorBound = ColorBound {
@@ -102,21 +105,33 @@ impl WaylandState {
         };
 
         struct Arg {
-            property: fn(&Color) -> f64,
-            bound: Bound<f64>,
+            property: fn(&Color) -> Precision,
+            bound: Bound<Precision>,
             callback: OutputSetColor,
         }
 
         const ARGS: [Arg; 2] = [
             Arg {
-                property: |c| c.temperature as f64,
+                property: |c| c.temperature as Precision,
                 bound: COLOR_BOUND.temperature,
-                callback: WaylandOutput::set_temperature,
+                callback: |output: &mut WaylandOutput, step: Precision| {
+                    let color = output.color();
+                    output.set_color(Color {
+                        temperature: color.temperature + step as i16,
+                        ..color
+                    });
+                },
             },
             Arg {
-                property: |c| c.brightness,
+                property: |c| c.brightness as Precision,
                 bound: COLOR_BOUND.brightness,
-                callback: WaylandOutput::set_brightness,
+                callback: |output: &mut WaylandOutput, step: Precision| {
+                    let color = output.color();
+                    output.set_color(Color {
+                        brightness: color.brightness + step,
+                        ..color
+                    });
+                },
             },
         ];
 
@@ -124,7 +139,7 @@ impl WaylandState {
         for output in &self.outputs {
             let output = Arc::clone(output);
             handles.push(thread::spawn(move || {
-                if duration > 0.0 {
+                if transition > 0.0 {
                     let mut handles = vec![];
                     for arg in ARGS {
                         let output = Arc::clone(&output);
@@ -135,7 +150,7 @@ impl WaylandState {
                                 (arg.property)(&target),
                                 (arg.property)(&color),
                                 arg.bound,
-                                duration,
+                                transition,
                                 arg.callback,
                             );
                         }));
@@ -149,28 +164,37 @@ impl WaylandState {
     }
 }
 
-fn calculate_interval(new: f64, old: f64, bound: Bound<f64>, duration: f64) -> (i32, f64, f64) {
+type Precision = f32;
+
+fn calculate_interval(
+    new: Precision,
+    old: Precision,
+    bound: Bound<Precision>,
+    transition: Transition,
+) -> (i32, Precision, Precision) {
     let diff = new - old;
     let sign = if diff.is_sign_negative() { -1.0 } else { 1.0 };
-    let step = (diff / duration).abs().min(bound.max).max(bound.min) * sign;
+    let step = (diff / transition).abs().min(bound.max).max(bound.min) * sign;
     let interval = (diff / step).round();
     let step = diff / interval;
-    let wait = duration / interval;
+    let wait = transition / interval;
 
     (interval as i32, step, wait)
 }
 
+pub type OutputSetColor = fn(&mut WaylandOutput, Precision);
+
 fn color_transit(
     output: Arc<Mutex<WaylandOutput>>,
-    new: f64,
-    old: f64,
-    bound: Bound<f64>,
-    duration: f64,
+    new: Precision,
+    old: Precision,
+    bound: Bound<Precision>,
+    transition: Transition,
     callback: OutputSetColor,
 ) {
-    let (interval, step, wait) = calculate_interval(new, old, bound, duration);
+    let (interval, step, wait) = calculate_interval(new, old, bound, transition);
     for i in 0..interval {
-        sleep(Duration::from_secs_f64(wait));
+        sleep(Duration::from_secs_f32(wait));
         if i < interval - 1 {
             callback(&mut output.lock().unwrap(), step);
         }
@@ -217,7 +241,7 @@ mod test {
 
         fn state_helper(state: &WaylandState, target: Color) {
             state
-                .change_to_color(target, 0_f64)
+                .change_to_color(target, 0.0)
                 .into_iter()
                 .for_each(|h| h.join().unwrap());
         }
@@ -330,16 +354,16 @@ mod test {
         }
     }
 
-    mod test_with_duration {
+    mod test_with_transition {
         use super::*;
 
         fn timeline(list: &[Option<Bound<Color>>]) {
             let state = get_state();
-            let time = 1_f64;
+            let time = 1.0;
             let handles = state.change_to_color(TARGET, time);
             let len = list.len() + 1;
             for b in list.iter() {
-                sleep(Duration::from_secs_f64(time / len as f64));
+                sleep(Duration::from_secs_f32(time / len as f32));
                 if let Some(b) = b {
                     assert!(state.color() < b.max);
                     assert!(state.color() > b.min);
@@ -355,11 +379,11 @@ mod test {
             let brightness_diff = ORIGINAL.brightness - TARGET.brightness;
             let min = Color {
                 temperature: TARGET.temperature + temperature_diff / 4,
-                brightness: TARGET.brightness + brightness_diff / 4_f64,
+                brightness: TARGET.brightness + brightness_diff / 4.0,
             };
             let max = Color {
                 temperature: TARGET.temperature + temperature_diff / 4 * 3,
-                brightness: TARGET.brightness + brightness_diff / 4_f64 * 3_f64,
+                brightness: TARGET.brightness + brightness_diff / 4.0 * 3.0,
             };
             timeline(&[None, Some(Bound { min, max }), None]);
         }
@@ -368,7 +392,7 @@ mod test {
         fn check_quoter() {
             let mid = Color {
                 temperature: (TARGET.temperature + ORIGINAL.temperature) / 2,
-                brightness: (TARGET.brightness + ORIGINAL.brightness) / 2_f64,
+                brightness: (TARGET.brightness + ORIGINAL.brightness) / 2.0,
             };
             timeline(&[
                 Some(Bound {

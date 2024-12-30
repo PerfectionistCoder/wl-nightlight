@@ -1,5 +1,6 @@
 use crate::color::Color;
 
+pub type Transition = f32;
 pub type Latitude = f64;
 pub type Longitude = Latitude;
 
@@ -14,11 +15,11 @@ impl Config {
     pub fn new() -> Self {
         Self {
             light_mode: Color {
-                temp: 6500,
+                temperature: 6500,
                 brightness: 1.0,
             },
             dark_mode: Color {
-                temp: 5500,
+                temperature: 5500,
                 brightness: 0.8,
             },
             lat: 51.51,

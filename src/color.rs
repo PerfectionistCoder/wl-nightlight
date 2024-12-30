@@ -1,10 +1,10 @@
-pub type Temperature = u16;
-pub type Brightness = f64;
+pub type Temperature = i16;
+pub type Brightness = f32;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Color<T = Temperature, B = Brightness> {
-    pub temperature: T,
-    pub brightness: B,
+pub struct Color {
+    pub temperature: Temperature,
+    pub brightness: Brightness,
 }
 
 impl Default for Color {
@@ -30,7 +30,7 @@ pub fn color_ramp_fill(
         &BLACKBODY_COLOR[(color_i + 3)..],
     );
 
-    let v_max = u16::MAX as f64 * color.brightness;
+    let v_max = u16::MAX as f64 * color.brightness as f64;
     let step = v_max / (ramp_size - 1) as f64;
     for i in 0..ramp_size {
         let v = step * i as f64;
