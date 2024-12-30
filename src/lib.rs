@@ -11,7 +11,7 @@ mod mode;
 mod wayland;
 
 pub fn run() {
-    let cfg = Config::new();
+    let cfg = Config::new(None).unwrap();
     let (mut wayland, wayland_state) = wayland::WaylandClient::new().unwrap();
     let state = Arc::new(Mutex::new(wayland_state));
 
