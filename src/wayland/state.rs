@@ -202,29 +202,9 @@ fn color_transit(
 }
 
 #[cfg(test)]
-mod test {
+mod tests {
     use super::super::WaylandClient;
     use super::*;
-    use std::cmp::Ordering;
-
-    impl PartialOrd for Color {
-        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-            if self.temperature < other.temperature && self.brightness < other.brightness {
-                Some(Ordering::Less)
-            } else if self.temperature > other.temperature && self.brightness > other.brightness {
-                Some(Ordering::Greater)
-            } else if self.temperature == other.temperature && self.brightness == other.brightness {
-                Some(Ordering::Equal)
-            } else {
-                None
-            }
-        }
-    }
-
-    fn get_state() -> WaylandState {
-        let (_, state) = WaylandClient::new().unwrap();
-        state
-    }
 
     const TARGET: Color = Color {
         temperature: 4500,
@@ -236,20 +216,25 @@ mod test {
         brightness: 1.0,
     };
 
+    fn state_helper(state: &WaylandState, target: Color) {
+        state
+            .change_to_color(target, 0.0)
+            .into_iter()
+            .for_each(|h| h.join().unwrap());
+    }
+
+    fn get_state() -> WaylandState {
+        let (_, state) = WaylandClient::new().unwrap();
+        state_helper(&state, ORIGINAL);
+        state
+    }
+
     mod test_instant_color_change {
         use super::*;
-
-        fn state_helper(state: &WaylandState, target: Color) {
-            state
-                .change_to_color(target, 0.0)
-                .into_iter()
-                .for_each(|h| h.join().unwrap());
-        }
 
         #[test]
         fn color_decrement() {
             let state = get_state();
-            state_helper(&state, ORIGINAL);
             state_helper(&state, TARGET);
             assert_eq!(state.color(), TARGET);
         }
@@ -356,6 +341,45 @@ mod test {
 
     mod test_with_transition {
         use super::*;
+        use std::cmp::Ordering;
+
+        impl PartialOrd for Color {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                if self.temperature < other.temperature && self.brightness < other.brightness {
+                    Some(Ordering::Less)
+                } else if self.temperature > other.temperature && self.brightness > other.brightness
+                {
+                    Some(Ordering::Greater)
+                } else if self.temperature == other.temperature
+                    && self.brightness == other.brightness
+                {
+                    Some(Ordering::Equal)
+                } else {
+                    None
+                }
+            }
+        }
+
+        fn get_fraction_of(color1: Color, color2: Color, fraction: f64) -> Color {
+            let bigger: &Color;
+            let smaller: &Color;
+
+            if color1 > color2 {
+                bigger = &color1;
+                smaller = &color2;
+            } else {
+                bigger = &color2;
+                smaller = &color1
+            }
+
+            let t_diff = bigger.temperature - smaller.temperature;
+            let b_diff = bigger.brightness - smaller.brightness;
+
+            Color {
+                temperature: smaller.temperature + (t_diff as f64 * fraction) as i16,
+                brightness: smaller.brightness + (b_diff as f64 * fraction) as f32,
+            }
+        }
 
         fn timeline(list: &[Option<Bound<Color>>]) {
             let state = get_state();
@@ -375,35 +399,30 @@ mod test {
 
         #[test]
         fn check_mid() {
-            let temperature_diff = ORIGINAL.temperature - TARGET.temperature;
-            let brightness_diff = ORIGINAL.brightness - TARGET.brightness;
-            let min = Color {
-                temperature: TARGET.temperature + temperature_diff / 4,
-                brightness: TARGET.brightness + brightness_diff / 4.0,
-            };
-            let max = Color {
-                temperature: TARGET.temperature + temperature_diff / 4 * 3,
-                brightness: TARGET.brightness + brightness_diff / 4.0 * 3.0,
-            };
-            timeline(&[None, Some(Bound { min, max }), None]);
+            let min = get_fraction_of(TARGET, ORIGINAL, 1.0 / 4.0);
+            let max = get_fraction_of(TARGET, ORIGINAL, 3.0 / 4.0);
+            timeline(&[None, None, Some(Bound { min, max }), None, None]);
         }
 
         #[test]
         fn check_quoter() {
-            let mid = Color {
-                temperature: (TARGET.temperature + ORIGINAL.temperature) / 2,
-                brightness: (TARGET.brightness + ORIGINAL.brightness) / 2.0,
-            };
+            let mid = get_fraction_of(TARGET, ORIGINAL, 1.0 / 2.0);
             timeline(&[
+                None,
+                None,
                 Some(Bound {
                     min: mid,
                     max: ORIGINAL,
                 }),
                 None,
+                None,
+                None,
                 Some(Bound {
                     min: TARGET,
                     max: mid,
                 }),
+                None,
+                None
             ]);
         }
     }
