@@ -145,7 +145,7 @@ impl WaylandState {
                         let output = Arc::clone(&output);
                         let color = output.lock().unwrap().color();
                         handles.push(thread::spawn(move || {
-                            color_transit(
+                            color_change_animation(
                                 output,
                                 (arg.property)(&target),
                                 (arg.property)(&color),
@@ -184,7 +184,7 @@ fn calculate_interval(
 
 pub type OutputSetColor = fn(&mut WaylandOutput, Precision);
 
-fn color_transit(
+fn color_change_animation(
     output: Arc<Mutex<WaylandOutput>>,
     new: Precision,
     old: Precision,
@@ -229,7 +229,7 @@ mod tests {
         state
     }
 
-    mod test_instant_color_change {
+    mod instant_color_change {
         use super::*;
 
         #[test]
@@ -271,7 +271,7 @@ mod tests {
         }
     }
 
-    mod test_calculate_interval {
+    mod calculate_interval {
         use super::*;
 
         #[test]
@@ -339,7 +339,7 @@ mod tests {
         }
     }
 
-    mod test_with_transition {
+    mod transition {
         use super::*;
         use std::cmp::Ordering;
 

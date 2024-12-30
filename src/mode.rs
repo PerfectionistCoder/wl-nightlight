@@ -55,31 +55,27 @@ mod tests {
 
     const HOUR: i64 = 3600;
 
-    mod test_light_mode_and_time_left {
-        use super::*;
+    #[test]
+    fn noon() {
+        let timestamp = get_timestamp(6, 12, NAIROBI.offset);
+        let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
+        assert_eq!(timer.mode, LightMode::Light);
+        assert!((timer.next - 6 * HOUR).abs() < HOUR);
+    }
 
-        #[test]
-        fn noon() {
-            let timestamp = get_timestamp(6, 12, NAIROBI.offset);
-            let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
-            assert_eq!(timer.mode, LightMode::Light);
-            assert!((timer.next - 6 * HOUR).abs() < HOUR);
-        }
+    #[test]
+    fn early_morning() {
+        let timestamp = get_timestamp(6, 3, NAIROBI.offset);
+        let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
+        assert_eq!(timer.mode, LightMode::Dark);
+        assert!((timer.next - 3 * HOUR).abs() < HOUR);
+    }
 
-        #[test]
-        fn early_morning() {
-            let timestamp = get_timestamp(6, 3, NAIROBI.offset);
-            let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
-            assert_eq!(timer.mode, LightMode::Dark);
-            assert!((timer.next - 3 * HOUR).abs() < HOUR);
-        }
-
-        #[test]
-        fn late_night() {
-            let timestamp = get_timestamp(6, 22, NAIROBI.offset);
-            let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
-            assert_eq!(timer.mode, LightMode::Dark);
-            assert!((timer.next - 8 * HOUR).abs() < HOUR);
-        }
+    #[test]
+    fn late_night() {
+        let timestamp = get_timestamp(6, 22, NAIROBI.offset);
+        let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp).unwrap();
+        assert_eq!(timer.mode, LightMode::Dark);
+        assert!((timer.next - 8 * HOUR).abs() < HOUR);
     }
 }

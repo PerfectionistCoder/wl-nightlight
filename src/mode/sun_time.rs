@@ -72,7 +72,7 @@ mod tests {
     use super::*;
     use chrono::*;
 
-    mod test_sun_time_date {
+    mod date {
         use super::*;
 
         #[test]
@@ -115,7 +115,7 @@ mod tests {
         }
     }
 
-    mod test_sun_time_timestamp {
+    mod timestamp {
         use super::*;
 
         #[test]
