@@ -1,16 +1,10 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Color {
-    pub temperature: u16,
-    pub brightness: f64,
-}
+pub type Temperature = u16;
+pub type Brightness = f64;
 
-impl Color {
-    pub fn temperature(&self) -> f64 {
-        self.temperature as f64
-    }
-    pub fn brightness(&self) -> f64 {
-        self.brightness
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Color<T = Temperature, B = Brightness> {
+    pub temperature: T,
+    pub brightness: B,
 }
 
 impl Default for Color {

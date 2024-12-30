@@ -85,12 +85,6 @@ impl WaylandState {
     }
 
     pub fn change_to_color(&self, target: Color, duration: f64) -> Vec<JoinHandle<()>> {
-        struct Arg {
-            property: fn(&Color) -> f64,
-            bound: Bound<f64>,
-            callback: OutputSetColor,
-        }
-
         struct ColorBound {
             temperature: Bound<f64>,
             brightness: Bound<f64>,
@@ -106,14 +100,21 @@ impl WaylandState {
                 max: 0.01,
             },
         };
+
+        struct Arg {
+            property: fn(&Color) -> f64,
+            bound: Bound<f64>,
+            callback: OutputSetColor,
+        }
+
         const ARGS: [Arg; 2] = [
             Arg {
-                property: Color::temperature,
+                property: |c| c.temperature as f64,
                 bound: COLOR_BOUND.temperature,
                 callback: WaylandOutput::set_temperature,
             },
             Arg {
-                property: Color::brightness,
+                property: |c| c.brightness,
                 bound: COLOR_BOUND.brightness,
                 callback: WaylandOutput::set_brightness,
             },
