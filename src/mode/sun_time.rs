@@ -18,7 +18,7 @@ impl SunTime {
 
         let n = (j_date - (2451545.0 + 0.0009) + 69.184 / 86400.0).ceil();
 
-        let j_ = n + 0.0009 - lng / FULL_CIRCLE;
+        let j_ = n + 0.0009 - lng as Precision / FULL_CIRCLE;
 
         let m_degrees = (357.5291 + 0.98560028 * j_) % FULL_CIRCLE;
         let m_radians = m_degrees.to_radians();
@@ -34,8 +34,9 @@ impl SunTime {
 
         let sin_d = lambda_radians.sin() * (23.4397 as Precision).to_radians().sin();
         let cos_d = sin_d.asin().cos();
-        let some_cos = ((-0.833 as Precision).to_radians().sin() - lat.to_radians().sin() * sin_d)
-            / (lat.to_radians().cos() * cos_d);
+        let some_cos = ((-0.833 as Precision).to_radians().sin()
+            - (lat as Precision).to_radians().sin() * sin_d)
+            / ((lat as Precision).to_radians().cos() * cos_d);
 
         let w0_radians = some_cos.acos();
         let w0_degrees = w0_radians.to_degrees();
@@ -91,8 +92,7 @@ mod tests {
         #[test]
         fn between_sunrise_sunset() {
             let timestamp = get_timestamp(6, 12, LONDON.offset);
-            let SunTime { sunrise, sunset } =
-                SunTime::new(LONDON.lat, LONDON.lng, timestamp);
+            let SunTime { sunrise, sunset } = SunTime::new(LONDON.lat, LONDON.lng, timestamp);
             let date = get_datetime(timestamp, LONDON.offset);
             let sunrise_date = get_datetime(sunrise, LONDON.offset);
             let sunset_date = get_datetime(sunset, LONDON.offset);
@@ -116,8 +116,7 @@ mod tests {
         #[test]
         fn utc() {
             let timestamp = get_timestamp(6, 12, LONDON.offset);
-            let SunTime { sunrise, sunset } =
-                SunTime::new(LONDON.lat, LONDON.lng, timestamp);
+            let SunTime { sunrise, sunset } = SunTime::new(LONDON.lat, LONDON.lng, timestamp);
             assert!(sunrise < sunset);
             assert!(sunrise < timestamp);
             assert!(sunset > timestamp);
@@ -126,8 +125,7 @@ mod tests {
         #[test]
         fn eat() {
             let timestamp = get_timestamp(6, 0, NAIROBI.offset);
-            let SunTime { sunrise, sunset } =
-                SunTime::new(NAIROBI.lat, NAIROBI.lng, timestamp);
+            let SunTime { sunrise, sunset } = SunTime::new(NAIROBI.lat, NAIROBI.lng, timestamp);
             assert_eq!(get_datetime(sunrise, NAIROBI.offset).hour(), 6);
             assert_eq!(get_datetime(sunset, NAIROBI.offset).hour(), 18);
         }
@@ -135,15 +133,11 @@ mod tests {
         #[test]
         fn summer_winter() {
             let summer = get_timestamp(8, 0, LONDON.offset);
-            let summer_sun_time_date = SunTimeDate::new(
-                SunTime::new(LONDON.lat, LONDON.lng, summer),
-                LONDON.offset,
-            );
+            let summer_sun_time_date =
+                SunTimeDate::new(SunTime::new(LONDON.lat, LONDON.lng, summer), LONDON.offset);
             let winter = get_timestamp(12, 0, LONDON.offset);
-            let winter_sun_time_date = SunTimeDate::new(
-                SunTime::new(LONDON.lat, LONDON.lng, winter),
-                LONDON.offset,
-            );
+            let winter_sun_time_date =
+                SunTimeDate::new(SunTime::new(LONDON.lat, LONDON.lng, winter), LONDON.offset);
 
             assert!(summer_sun_time_date.sunrise.hour() < winter_sun_time_date.sunrise.hour());
             assert!(summer_sun_time_date.sunset.hour() > winter_sun_time_date.sunset.hour());

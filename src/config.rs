@@ -17,7 +17,7 @@ pub trait Check {
     }
 }
 
-pub type Latitude = f64;
+pub type Latitude = f32;
 pub type Longitude = Latitude;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
