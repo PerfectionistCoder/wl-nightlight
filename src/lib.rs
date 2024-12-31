@@ -31,7 +31,7 @@ pub fn run() {
 
     let mut first = true;
     loop {
-        let timer = ModeTimer::new(cfg.location()).unwrap();
+        let timer = ModeTimer::new(cfg.location());
         let mode = if timer.mode() == LightMode::Light {
             cfg.light_mode()
         } else {

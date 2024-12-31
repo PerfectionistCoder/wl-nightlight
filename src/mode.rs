@@ -1,6 +1,5 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use anyhow::Result;
 use sun_time::{SunTime, Timestamp};
 
 use crate::config::Location;
@@ -22,7 +21,7 @@ pub struct ModeTimer {
 }
 
 impl ModeTimer {
-    pub fn new(location: Location) -> Result<Self> {
+    pub fn new(location: Location) -> Self {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -30,21 +29,20 @@ impl ModeTimer {
         ModeTimer::get_timer(location, now)
     }
 
-    fn get_timer(location: Location, timestamp: Timestamp) -> Result<Self> {
-        let sun_time = SunTime::new(location.lat, location.lng, timestamp)?;
-        Ok(
-            if sun_time.sunrise() < timestamp && timestamp < sun_time.sunset() {
-                Self {
-                    next: sun_time.sunset() - timestamp,
-                    mode: LightMode::Light,
-                }
-            } else {
-                Self {
-                    next: sun_time.sunrise() - timestamp,
-                    mode: LightMode::Dark,
-                }
-            },
-        )
+    fn get_timer(location: Location, timestamp: Timestamp) -> Self {
+        let sun_time = SunTime::new(location.lat, location.lng, timestamp);
+
+        if sun_time.sunrise() < timestamp && timestamp < sun_time.sunset() {
+            Self {
+                next: sun_time.sunset() - timestamp,
+                mode: LightMode::Light,
+            }
+        } else {
+            Self {
+                next: sun_time.sunrise() - timestamp,
+                mode: LightMode::Dark,
+            }
+        }
     }
 
     pub fn next(&self) -> Timestamp {
@@ -66,7 +64,7 @@ mod tests {
     #[test]
     fn noon() {
         let timestamp = get_timestamp(6, 12, NAIROBI.offset);
-        let timer = ModeTimer::get_timer(NAIROBI.location(), timestamp).unwrap();
+        let timer = ModeTimer::get_timer(NAIROBI.location(), timestamp);
         assert_eq!(timer.mode, LightMode::Light);
         assert!((timer.next - 6 * HOUR).abs() < HOUR);
     }
@@ -74,7 +72,7 @@ mod tests {
     #[test]
     fn early_morning() {
         let timestamp = get_timestamp(6, 3, NAIROBI.offset);
-        let timer = ModeTimer::get_timer(NAIROBI.location(), timestamp).unwrap();
+        let timer = ModeTimer::get_timer(NAIROBI.location(), timestamp);
         assert_eq!(timer.mode, LightMode::Dark);
         assert!((timer.next - 3 * HOUR).abs() < HOUR);
     }
@@ -82,7 +80,7 @@ mod tests {
     #[test]
     fn late_night() {
         let timestamp = get_timestamp(6, 22, NAIROBI.offset);
-        let timer = ModeTimer::get_timer(NAIROBI.location(), timestamp).unwrap();
+        let timer = ModeTimer::get_timer(NAIROBI.location(), timestamp);
         assert_eq!(timer.mode, LightMode::Dark);
         assert!((timer.next - 8 * HOUR).abs() < HOUR);
     }
