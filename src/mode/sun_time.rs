@@ -2,7 +2,7 @@ use anyhow::{Error, Result};
 
 use crate::config::{Latitude, Longitude};
 
-pub type Timestamp = i64;
+pub type Timestamp = i32;
 
 type Precision = f64;
 
@@ -78,7 +78,7 @@ mod tests {
         #[test]
         fn now() {
             let SunTime { sunrise, sunset } =
-                SunTime::new(LONDON.lat, LONDON.lng, Local::now().timestamp()).unwrap();
+                SunTime::new(LONDON.lat, LONDON.lng, Local::now().timestamp() as i32).unwrap();
             let sunrise_date = get_datetime(sunrise, LONDON.offset);
             let sunset_date = get_datetime(sunset, LONDON.offset);
             assert_eq!(sunrise_date.day(), sunset_date.day())

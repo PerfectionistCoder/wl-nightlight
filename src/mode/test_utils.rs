@@ -1,3 +1,5 @@
+use crate::config::Location;
+
 use crate::{
     config::{Latitude, Longitude},
     mode::sun_time::{SunTime, Timestamp},
@@ -8,6 +10,15 @@ pub struct LatLng {
     pub lat: Latitude,
     pub lng: Longitude,
     pub offset: i32,
+}
+
+impl LatLng {
+    pub fn location(&self) -> Location {
+        Location {
+            lat: self.lat,
+            lng: self.lng,
+        }
+    }
 }
 
 pub const LONDON: LatLng = LatLng {
@@ -35,12 +46,12 @@ pub fn get_timestamp(month: u32, hour: u32, offset: i32) -> Timestamp {
     tz_offset
         .from_local_datetime(&datetime)
         .unwrap()
-        .timestamp()
+        .timestamp() as i32
 }
 
 pub fn get_datetime(timestamp: Timestamp, offset: i32) -> DateTime<FixedOffset> {
     let tz = get_offset_hour(offset);
-    DateTime::from_timestamp(timestamp, 0)
+    DateTime::from_timestamp(timestamp as i64, 0)
         .unwrap()
         .with_timezone(&tz)
 }

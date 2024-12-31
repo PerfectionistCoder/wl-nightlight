@@ -20,10 +20,10 @@ pub trait Check {
 pub type Latitude = f64;
 pub type Longitude = Latitude;
 
-#[derive(Debug, PartialEq)]
-struct Location {
-    lat: Latitude,
-    lng: Longitude,
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Location {
+    pub lat: Latitude,
+    pub lng: Longitude,
 }
 
 impl Check for Location {
@@ -36,9 +36,9 @@ impl Check for Location {
 
 pub type Transition = f32;
 
-#[derive(Debug, PartialEq)]
-struct Animation {
-    transition: Transition,
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub struct Animation {
+    pub transition: Transition,
 }
 
 impl Default for Animation {
@@ -126,6 +126,14 @@ impl Config {
 
     pub fn dark_mode(&self) -> Color {
         self.dark_mode
+    }
+
+    pub fn location(&self) -> Location {
+        self.location
+    }
+
+    pub fn animation(&self) -> Animation {
+        self.animation
     }
 }
 
@@ -485,7 +493,8 @@ mod tests {
             "animation_2",
             |conf| {
                 write_location(conf, None);
-                conf.with_section(Some("animation")).set("transition", "invalid");
+                conf.with_section(Some("animation"))
+                    .set("transition", "invalid");
             },
             DISCARD_ASSERT,
         );
