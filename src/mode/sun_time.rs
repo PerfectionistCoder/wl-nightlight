@@ -1,10 +1,13 @@
+use getset::CopyGetters;
+
 use crate::config::{Latitude, Longitude};
 
 pub type Timestamp = i32;
 
 type Precision = f64;
 
-#[derive(Debug)]
+#[derive(Debug, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct SunTime {
     sunrise: Timestamp,
     sunset: Timestamp,
@@ -51,14 +54,6 @@ impl SunTime {
             sunrise: j_day_to_timestamp(j_rise),
             sunset: j_day_to_timestamp(j_set),
         }
-    }
-
-    pub fn sunrise(&self) -> Timestamp {
-        self.sunrise
-    }
-
-    pub fn sunset(&self) -> Timestamp {
-        self.sunset
     }
 }
 

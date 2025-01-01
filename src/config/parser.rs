@@ -45,7 +45,7 @@ impl Section for Animation {
 }
 
 fn get_err_vec(arr: &[Result<(), Error>]) -> ErrorList {
-    arr.into_iter()
+    arr.iter()
         .filter(|el| el.is_err())
         .map(|el| el.unwrap_err())
         .collect()

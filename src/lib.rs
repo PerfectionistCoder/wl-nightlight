@@ -13,7 +13,7 @@ mod mode;
 mod wayland;
 
 pub fn run() {
-    let cfg = Config::new(Some(String::from("example-config.ini"))).unwrap();
+    let cfg = Config::new(None).unwrap();
 
     let (mut wayland, wayland_state) = wayland::WaylandClient::new().unwrap();
     let state = Arc::new(Mutex::new(wayland_state));
@@ -29,22 +29,25 @@ pub fn run() {
         });
     }
 
-    // let mut first = true;
-    // loop {
-    //     let timer = ModeTimer::new(cfg.location());
-    //     let mode = if timer.mode() == LightMode::Light {
-    //         cfg.light_mode()
-    //     } else {
-    //         cfg.dark_mode()
-    //     };
+    let mut first = true;
+    loop {
+        let timer = ModeTimer::new(cfg.location().lat(), cfg.location().lng());
+        let mode = if timer.mode() == LightMode::Light {
+            cfg.light()
+        } else {
+            cfg.dark()
+        };
 
-    //     if first {
-    //         state.lock().unwrap().change_to_color(mode, 0.0);
-    //         first = false;
-    //     } else {
-    //         state.lock().unwrap().change_to_color(mode, cfg.animation().transition);
-    //     }
-    //     eprintln!("wait: {}", timer.next());
-    //     sleep(Duration::from_secs(timer.next() as u64));
-    // }
+        state.lock().unwrap().change_to_color(mode, {
+            if first {
+                first = false;
+                0.0
+            } else {
+                cfg.animation().transition()
+            }
+        });
+
+        eprintln!("wait: {}", timer.next());
+        sleep(Duration::from_secs(timer.next() as u64));
+    }
 }

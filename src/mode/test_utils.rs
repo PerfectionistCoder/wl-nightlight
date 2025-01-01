@@ -1,5 +1,3 @@
-use crate::config::Location;
-
 use crate::{
     config::{Latitude, Longitude},
     mode::sun_time::{SunTime, Timestamp},
@@ -10,15 +8,6 @@ pub struct LatLng {
     pub lat: Latitude,
     pub lng: Longitude,
     pub offset: i32,
-}
-
-impl LatLng {
-    pub fn location(&self) -> Location {
-        Location {
-            lat: self.lat,
-            lng: self.lng,
-        }
-    }
 }
 
 pub const LONDON: LatLng = LatLng {

@@ -5,6 +5,7 @@ use std::{
 };
 
 use anyhow::{bail, Result};
+use getset::{CopyGetters, MutGetters};
 use wayrs_client::{
     global::*,
     protocol::{wl_registry::GlobalArgs, WlOutput},
@@ -24,8 +25,11 @@ struct Bound<T> {
     max: T,
 }
 
+#[derive(MutGetters, CopyGetters)]
 pub struct WaylandState {
+    #[getset(get_mut = "pub")]
     outputs: Vec<Arc<Mutex<WaylandOutput>>>,
+    #[getset(get_copy = "pub")]
     gamma_manager: ZwlrGammaControlManagerV1,
 }
 
@@ -45,14 +49,6 @@ impl WaylandState {
             outputs,
             gamma_manager,
         })
-    }
-
-    pub fn outputs(&mut self) -> &mut Vec<Arc<Mutex<WaylandOutput>>> {
-        &mut self.outputs
-    }
-
-    pub fn gamma_manager(&self) -> ZwlrGammaControlManagerV1 {
-        self.gamma_manager
     }
 
     /// Returns the average color of all outputs, or the default color if there are no outputs
@@ -422,7 +418,7 @@ mod tests {
                     max: mid,
                 }),
                 None,
-                None
+                None,
             ]);
         }
     }

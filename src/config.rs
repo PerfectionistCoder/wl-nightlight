@@ -1,5 +1,6 @@
 use std::env;
 
+use getset::CopyGetters;
 use ini::Ini;
 use parser::parse_config;
 
@@ -10,17 +11,19 @@ mod parser;
 pub type Latitude = f32;
 pub type Longitude = Latitude;
 
-#[derive(Debug, PartialEq, Clone, Copy, Default)]
+#[derive(Debug, PartialEq, Clone, Copy, Default, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct Location {
-    pub lat: Latitude,
-    pub lng: Longitude,
+    lat: Latitude,
+    lng: Longitude,
 }
 
 pub type Transition = f32;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct Animation {
-    pub transition: Transition,
+    transition: Transition,
 }
 
 impl Default for Animation {
@@ -35,7 +38,8 @@ pub enum Error {
     Parse(parser::ErrorList),
 }
 
-#[derive(Debug)]
+#[derive(Debug, CopyGetters)]
+#[getset(get_copy = "pub")]
 pub struct Config {
     location: Location,
     light: Color,
@@ -44,14 +48,6 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn location(&self) -> Location {
-        self.location
-    }
-
-    pub fn animation(&self) -> Animation {
-        self.animation
-    }
-
     pub fn new(path: Option<String>) -> Result<Self, Error> {
         let file_path = path.unwrap_or(
             env::var("XDG_CONFIG_HOME")
@@ -59,6 +55,6 @@ impl Config {
                 + "wl-nightlight/config.ini",
         );
         let file = Ini::load_from_file(file_path).map_err(|_| Error::File)?;
-        parse_config(&file).map_err(|err| Error::Parse(err))
+        parse_config(&file).map_err(Error::Parse)
     }
 }

@@ -3,6 +3,7 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 
+use getset::CopyGetters;
 use wayrs_client::cstr;
 use wayrs_client::global::*;
 use wayrs_client::protocol::*;
@@ -13,14 +14,17 @@ use crate::color::{color_ramp_fill, Color};
 
 use super::state::WaylandState;
 
-#[derive(Debug)]
+#[derive(Debug, CopyGetters)]
 pub struct WaylandOutput {
+    #[getset(get_copy = "pub")]
     reg_name: u32,
     wl: WlOutput,
     name: Option<String>,
+    #[getset(get_copy = "pub")]
     color: Color,
     gamma_control: ZwlrGammaControlV1,
     ramp_size: usize,
+    #[getset(get_copy = "pub")]
     color_changed: bool,
 }
 
@@ -32,62 +36,14 @@ impl WaylandOutput {
     ) -> Arc<Mutex<Self>> {
         eprintln!("New output: {}", global.name);
 
-        let output = global
-            .bind_with_cb(conn, 4, |ctx: EventCtx<WaylandState, WlOutput>| {
-                if let wl_output::Event::Name(name) = ctx.event {
-                    let mut output = ctx
-                        .state
-                        .outputs()
-                        .iter_mut()
-                        .find(|o| o.lock().unwrap().wl == ctx.proxy)
-                        .unwrap()
-                        .lock()
-                        .unwrap();
-                    let name = String::from_utf8(name.into_bytes()).expect("invalid output name");
-                    eprintln!("Output {}: name = {name:?}", output.reg_name);
-                    output.name = Some(name);
-                }
-            })
-            .unwrap();
+        let output = global.bind_with_cb(conn, 4, wl_output_cb).unwrap();
 
         Arc::new(Mutex::new(Self {
             reg_name: global.name,
             wl: output,
             name: None,
             color: Color::default(),
-            gamma_control: gamma_manager.get_gamma_control_with_cb(
-                conn,
-                output,
-                |ctx: EventCtx<WaylandState, ZwlrGammaControlV1>| {
-                    let output_index = ctx
-                        .state
-                        .outputs()
-                        .iter()
-                        .position(|o| o.lock().unwrap().gamma_control == ctx.proxy)
-                        .expect("Received event for unknown output");
-                    match ctx.event {
-                        zwlr_gamma_control_v1::Event::GammaSize(size) => {
-                            let output = &mut ctx.state.outputs()[output_index].lock().unwrap();
-                            eprintln!("Output {}: ramp_size = {}", output.reg_name, size);
-                            output.ramp_size = size as usize;
-                            output.update_displayed_color(ctx.conn).unwrap();
-                        }
-                        zwlr_gamma_control_v1::Event::Failed => {
-                            let output = ctx.state.outputs().swap_remove(output_index);
-                            eprintln!(
-                                "Output {}: gamma_control::Event::Failed",
-                                output.lock().unwrap().reg_name
-                            );
-                            Arc::try_unwrap(output)
-                                .unwrap()
-                                .into_inner()
-                                .unwrap()
-                                .destroy(ctx.conn);
-                        }
-                        _ => (),
-                    }
-                },
-            ),
+            gamma_control: gamma_manager.get_gamma_control_with_cb(conn, output, gamma_control_cb),
             ramp_size: 0,
             color_changed: true,
         }))
@@ -97,18 +53,6 @@ impl WaylandOutput {
         eprintln!("Output {} removed", self.reg_name);
         self.gamma_control.destroy(conn);
         self.wl.release(conn);
-    }
-
-    pub fn reg_name(&self) -> u32 {
-        self.reg_name
-    }
-
-    pub fn color(&self) -> Color {
-        self.color
-    }
-
-    pub fn color_changed(&self) -> bool {
-        self.color_changed
     }
 
     pub fn set_color(&mut self, color: Color) {
@@ -134,5 +78,51 @@ impl WaylandOutput {
 
         self.color_changed = false;
         Ok(())
+    }
+}
+
+fn wl_output_cb(ctx: EventCtx<WaylandState, WlOutput>) {
+    if let wl_output::Event::Name(name) = ctx.event {
+        let mut output = ctx
+            .state
+            .outputs_mut()
+            .iter_mut()
+            .find(|o| o.lock().unwrap().wl == ctx.proxy)
+            .unwrap()
+            .lock()
+            .unwrap();
+        let name = String::from_utf8(name.into_bytes()).expect("invalid output name");
+        eprintln!("Output {}: name = {name:?}", output.reg_name);
+        output.name = Some(name);
+    }
+}
+
+fn gamma_control_cb(ctx: EventCtx<WaylandState, ZwlrGammaControlV1>) {
+    let output_index = ctx
+        .state
+        .outputs_mut()
+        .iter()
+        .position(|o| o.lock().unwrap().gamma_control == ctx.proxy)
+        .expect("Received event for unknown output");
+    match ctx.event {
+        zwlr_gamma_control_v1::Event::GammaSize(size) => {
+            let output = &mut ctx.state.outputs_mut()[output_index].lock().unwrap();
+            eprintln!("Output {}: ramp_size = {}", output.reg_name, size);
+            output.ramp_size = size as usize;
+            output.update_displayed_color(ctx.conn).unwrap();
+        }
+        zwlr_gamma_control_v1::Event::Failed => {
+            let output = ctx.state.outputs_mut().swap_remove(output_index);
+            eprintln!(
+                "Output {}: gamma_control::Event::Failed",
+                output.lock().unwrap().reg_name
+            );
+            Arc::try_unwrap(output)
+                .unwrap()
+                .into_inner()
+                .unwrap()
+                .destroy(ctx.conn);
+        }
+        _ => (),
     }
 }
