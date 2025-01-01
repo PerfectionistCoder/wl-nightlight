@@ -29,22 +29,22 @@ pub fn run() {
         });
     }
 
-    let mut first = true;
-    loop {
-        let timer = ModeTimer::new(cfg.location());
-        let mode = if timer.mode() == LightMode::Light {
-            cfg.light_mode()
-        } else {
-            cfg.dark_mode()
-        };
+    // let mut first = true;
+    // loop {
+    //     let timer = ModeTimer::new(cfg.location());
+    //     let mode = if timer.mode() == LightMode::Light {
+    //         cfg.light_mode()
+    //     } else {
+    //         cfg.dark_mode()
+    //     };
 
-        if first {
-            state.lock().unwrap().change_to_color(mode, 0.0);
-            first = false;
-        } else {
-            state.lock().unwrap().change_to_color(mode, cfg.animation().transition);
-        }
-        eprintln!("wait: {}", timer.next());
-        sleep(Duration::from_secs(timer.next() as u64));
-    }
+    //     if first {
+    //         state.lock().unwrap().change_to_color(mode, 0.0);
+    //         first = false;
+    //     } else {
+    //         state.lock().unwrap().change_to_color(mode, cfg.animation().transition);
+    //     }
+    //     eprintln!("wait: {}", timer.next());
+    //     sleep(Duration::from_secs(timer.next() as u64));
+    // }
 }
