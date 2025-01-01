@@ -1,4 +1,5 @@
 use std::{
+    process::exit,
     sync::{Arc, Mutex},
     thread::{self, sleep},
     time::Duration,
@@ -13,7 +14,10 @@ mod mode;
 mod wayland;
 
 pub fn run() {
-    let cfg = Config::new(None).unwrap();
+    let cfg = Config::new(Some(String::from("example-config.ini"))).unwrap_or_else(|err| {
+        println!("{err}");
+        exit(1);
+    });
 
     let (mut wayland, wayland_state) = wayland::WaylandClient::new().unwrap();
     let state = Arc::new(Mutex::new(wayland_state));

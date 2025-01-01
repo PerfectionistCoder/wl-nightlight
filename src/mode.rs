@@ -10,7 +10,8 @@ mod sun_time;
 #[cfg(test)]
 mod test_utils;
 
-#[derive(Debug, PartialEq, Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
+#[cfg_attr(test, derive(Debug))]
 pub enum LightMode {
     Light,
     Dark,

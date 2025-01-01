@@ -1,16 +1,22 @@
 use std::str::FromStr;
 
 use ini::{Ini, Properties};
+use thiserror::Error;
 
 use crate::color::Color;
 
 use super::{Animation, Config, Location};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, Error)]
+#[cfg_attr(test, derive(PartialEq))]
 pub enum Error {
+    #[error("Section `{0}` is required")]
     MissingSection(&'static str),
+    #[error("Key `{0}` is required")]
     MissingKey(&'static str),
+    #[error("Value of key `{0}` is invalid")]
     Invalid(&'static str),
+    #[error("Value of key `{0}` is out of range")]
     OutOfRange(&'static str),
 }
 
@@ -23,8 +29,8 @@ trait Section {
 impl Section for Color {
     fn check(&self) -> ErrorList {
         get_err_vec(&[
-            in_range(self.temperature, 1000, 10000),
-            in_range(self.brightness, 0.0, 1.0),
+            ("temperature", in_range(self.temperature, 1000, 10000)),
+            ("brightness", in_range(self.brightness, 0.0, 1.0)),
         ])
     }
 }
@@ -32,31 +38,27 @@ impl Section for Color {
 impl Section for Location {
     fn check(&self) -> ErrorList {
         get_err_vec(&[
-            in_range(self.lat, -90.0, 90.0),
-            in_range(self.lng, -180.0, 180.0),
+            ("lat", in_range(self.lat, -90.0, 90.0)),
+            ("lng", in_range(self.lng, -180.0, 180.0)),
         ])
     }
 }
 
 impl Section for Animation {
     fn check(&self) -> ErrorList {
-        get_err_vec(&[in_range(self.transition, 0.0, 3600.0)])
+        get_err_vec(&[("transition", in_range(self.transition, 0.0, 3600.0))])
     }
 }
 
-fn get_err_vec(arr: &[Result<(), Error>]) -> ErrorList {
+fn get_err_vec(arr: &[(&'static str, bool)]) -> ErrorList {
     arr.iter()
-        .filter(|el| el.is_err())
-        .map(|el| el.unwrap_err())
+        .filter(|el| !el.1)
+        .map(|el| Error::OutOfRange(el.0))
         .collect()
 }
 
-fn in_range<T: PartialOrd>(value: T, min: T, max: T) -> Result<(), Error> {
-    if min <= value && value <= max {
-        Ok(())
-    } else {
-        Err(Error::OutOfRange(""))
-    }
+fn in_range<T: PartialOrd>(value: T, min: T, max: T) -> bool {
+    min <= value && value <= max
 }
 
 pub fn parse_config(file: &Ini) -> Result<Config, ErrorList> {
@@ -268,10 +270,7 @@ mod tests {
             },
             DISCARD_ASSERT,
             |err| {
-                assert_eq!(
-                    err,
-                    vec![Error::Invalid("lat"), Error::Invalid("lng")]
-                );
+                assert_eq!(err, vec![Error::Invalid("lat"), Error::Invalid("lng")]);
             },
         );
     }
@@ -333,10 +332,7 @@ mod tests {
             |err| {
                 assert_eq!(
                     err,
-                    vec![
-                        Error::Invalid("temperature"),
-                        Error::Invalid("brightness")
-                    ]
+                    vec![Error::Invalid("temperature"), Error::Invalid("brightness")]
                 );
             },
         );
@@ -403,10 +399,7 @@ mod tests {
             |err| {
                 assert_eq!(
                     err,
-                    vec![
-                        Error::Invalid("temperature"),
-                        Error::Invalid("brightness")
-                    ]
+                    vec![Error::Invalid("temperature"), Error::Invalid("brightness")]
                 );
             },
         );

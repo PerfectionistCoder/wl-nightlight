@@ -6,7 +6,7 @@ pub type Timestamp = i32;
 
 type Precision = f64;
 
-#[derive(Debug, CopyGetters)]
+#[derive(CopyGetters)]
 #[getset(get_copy = "pub")]
 pub struct SunTime {
     sunrise: Timestamp,

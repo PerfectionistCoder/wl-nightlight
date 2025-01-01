@@ -1,8 +1,9 @@
-use std::env;
+use std::{env, fmt};
 
 use getset::CopyGetters;
 use ini::Ini;
-use parser::parse_config;
+use parser::{parse_config, ErrorList};
+use thiserror::Error;
 
 use crate::color::Color;
 
@@ -11,7 +12,8 @@ mod parser;
 pub type Latitude = f32;
 pub type Longitude = Latitude;
 
-#[derive(Debug, PartialEq, Clone, Copy, Default, CopyGetters)]
+#[derive(Clone, Copy, Default, CopyGetters)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 #[getset(get_copy = "pub")]
 pub struct Location {
     lat: Latitude,
@@ -20,7 +22,8 @@ pub struct Location {
 
 pub type Transition = f32;
 
-#[derive(Debug, PartialEq, Clone, Copy, CopyGetters)]
+#[derive(Clone, Copy, CopyGetters)]
+#[cfg_attr(test, derive(Debug, PartialEq))]
 #[getset(get_copy = "pub")]
 pub struct Animation {
     transition: Transition,
@@ -33,12 +36,27 @@ impl Default for Animation {
 }
 
 #[derive(Debug)]
-pub enum Error {
-    File,
-    Parse(parser::ErrorList),
+pub struct ParseErrorList(ErrorList);
+
+impl fmt::Display for ParseErrorList {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.0.iter().for_each(|err| {
+            let _ = writeln!(f, "{}", err);
+        });
+        Ok(())
+    }
 }
 
-#[derive(Debug, CopyGetters)]
+#[derive(Debug, Error)]
+pub enum Error {
+    #[error("Fail to locate config file")]
+    File,
+    #[error("Fail to load config file:\n{}", .0)]
+    Config(ParseErrorList),
+}
+
+#[derive(CopyGetters)]
+#[cfg_attr(test, derive(Debug))]
 #[getset(get_copy = "pub")]
 pub struct Config {
     location: Location,
@@ -55,6 +73,6 @@ impl Config {
                 + "wl-nightlight/config.ini",
         );
         let file = Ini::load_from_file(file_path).map_err(|_| Error::File)?;
-        parse_config(&file).map_err(Error::Parse)
+        parse_config(&file).map_err(|err| Error::Config(ParseErrorList(err)))
     }
 }
