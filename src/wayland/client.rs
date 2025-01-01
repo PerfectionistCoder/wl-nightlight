@@ -8,6 +8,7 @@ use wayrs_client::global::*;
 use wayrs_client::protocol::*;
 use wayrs_client::{Connection, IoMode};
 
+use super::unwrap_output;
 use super::{output::WaylandOutput, state::WaylandState};
 
 pub struct WaylandClient {
@@ -40,11 +41,8 @@ impl WaylandClient {
         }
 
         for output in state.outputs_mut() {
-            if output.lock().unwrap().color_changed() {
-                output
-                    .lock()
-                    .unwrap()
-                    .update_displayed_color(&mut self.conn)?;
+            if unwrap_output(output).color_changed() {
+                unwrap_output(output).update_displayed_color(&mut self.conn)?;
             }
         }
         self.conn.flush(IoMode::Blocking)?;
@@ -60,15 +58,15 @@ fn wl_register_cb(
     match event {
         wl_registry::Event::Global(global) if global.is::<WlOutput>() => {
             let output = WaylandOutput::bind(conn, global, state.gamma_manager());
-            output.lock().unwrap().set_color(state.color());
-            output.lock().unwrap().update_displayed_color(conn).unwrap();
+            unwrap_output(&output).set_color(state.color());
+            unwrap_output(&output).update_displayed_color(conn).unwrap();
             state.outputs_mut().push(output);
         }
         wl_registry::Event::GlobalRemove(name) => {
             if let Some(output_index) = state
                 .outputs_mut()
                 .iter()
-                .position(|o| o.lock().unwrap().reg_name() == *name)
+                .position(|output| unwrap_output(output).reg_name() == *name)
             {
                 let output = state.outputs_mut().swap_remove(output_index);
                 Arc::try_unwrap(output)

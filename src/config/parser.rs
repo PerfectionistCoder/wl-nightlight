@@ -268,10 +268,7 @@ mod tests {
             },
             DISCARD_ASSERT,
             |err| {
-                assert_eq!(
-                    err,
-                    vec![Error::Invalid("lat"), Error::Invalid("lng")]
-                );
+                assert_eq!(err, vec![Error::Invalid("lat"), Error::Invalid("lng")]);
             },
         );
     }
@@ -333,10 +330,7 @@ mod tests {
             |err| {
                 assert_eq!(
                     err,
-                    vec![
-                        Error::Invalid("temperature"),
-                        Error::Invalid("brightness")
-                    ]
+                    vec![Error::Invalid("temperature"), Error::Invalid("brightness")]
                 );
             },
         );
@@ -403,10 +397,7 @@ mod tests {
             |err| {
                 assert_eq!(
                     err,
-                    vec![
-                        Error::Invalid("temperature"),
-                        Error::Invalid("brightness")
-                    ]
+                    vec![Error::Invalid("temperature"), Error::Invalid("brightness")]
                 );
             },
         );

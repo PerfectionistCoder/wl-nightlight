@@ -18,7 +18,7 @@ use crate::{
     config::Transition,
 };
 
-use super::output::WaylandOutput;
+use super::{output::WaylandOutput, unwrap_output};
 
 struct Bound<T> {
     min: T,
@@ -62,7 +62,7 @@ impl WaylandState {
                     temperature: 0,
                 },
                 |color, output| {
-                    let output_color = output.lock().unwrap().color();
+                    let output_color = unwrap_output(output).color();
                     Color {
                         brightness: color.brightness + output_color.brightness,
                         temperature: color.temperature + output_color.temperature,
@@ -80,7 +80,7 @@ impl WaylandState {
     pub fn color_changed(&self) -> bool {
         self.outputs
             .iter()
-            .any(|output| output.lock().unwrap().color_changed())
+            .any(|output| unwrap_output(output).color_changed())
     }
 
     pub fn change_to_color(&self, target: Color, transition: Transition) -> Vec<JoinHandle<()>> {
@@ -139,7 +139,7 @@ impl WaylandState {
                     let mut handles = vec![];
                     for arg in ARGS {
                         let output = Arc::clone(&output);
-                        let color = output.lock().unwrap().color();
+                        let color = unwrap_output(&output).color();
                         handles.push(thread::spawn(move || {
                             color_change_animation(
                                 output,
@@ -153,7 +153,7 @@ impl WaylandState {
                     }
                     handles.into_iter().for_each(|h| h.join().unwrap());
                 }
-                output.lock().unwrap().set_color(target);
+                unwrap_output(&output).set_color(target);
             }));
         }
         handles
@@ -192,7 +192,7 @@ fn color_change_animation(
     for i in 0..interval {
         sleep(Duration::from_secs_f32(wait));
         if i < interval - 1 {
-            callback(&mut output.lock().unwrap(), step);
+            callback(&mut unwrap_output(&output), step);
         }
     }
 }

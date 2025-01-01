@@ -11,6 +11,7 @@ use wayrs_client::{Connection, EventCtx};
 use wayrs_protocols::wlr_gamma_control_unstable_v1::*;
 
 use crate::color::{color_ramp_fill, Color};
+use crate::wayland::unwrap_output;
 
 use super::state::WaylandState;
 
@@ -87,7 +88,7 @@ fn wl_output_cb(ctx: EventCtx<WaylandState, WlOutput>) {
             .state
             .outputs_mut()
             .iter_mut()
-            .find(|o| o.lock().unwrap().wl == ctx.proxy)
+            .find(|output| unwrap_output(output).wl == ctx.proxy)
             .unwrap()
             .lock()
             .unwrap();
@@ -102,11 +103,11 @@ fn gamma_control_cb(ctx: EventCtx<WaylandState, ZwlrGammaControlV1>) {
         .state
         .outputs_mut()
         .iter()
-        .position(|o| o.lock().unwrap().gamma_control == ctx.proxy)
+        .position(|output| unwrap_output(output).gamma_control == ctx.proxy)
         .expect("Received event for unknown output");
     match ctx.event {
         zwlr_gamma_control_v1::Event::GammaSize(size) => {
-            let output = &mut ctx.state.outputs_mut()[output_index].lock().unwrap();
+            let mut output = unwrap_output(&ctx.state.outputs_mut()[output_index]);
             eprintln!("Output {}: ramp_size = {}", output.reg_name, size);
             output.ramp_size = size as usize;
             output.update_displayed_color(ctx.conn).unwrap();
@@ -115,7 +116,7 @@ fn gamma_control_cb(ctx: EventCtx<WaylandState, ZwlrGammaControlV1>) {
             let output = ctx.state.outputs_mut().swap_remove(output_index);
             eprintln!(
                 "Output {}: gamma_control::Event::Failed",
-                output.lock().unwrap().reg_name
+                unwrap_output(&output).reg_name
             );
             Arc::try_unwrap(output)
                 .unwrap()
