@@ -87,7 +87,7 @@ fn wl_output_cb(ctx: EventCtx<WaylandState, WlOutput>) {
             .state
             .outputs_mut()
             .iter_mut()
-            .find(|o| o.lock().unwrap().wl == ctx.proxy)
+            .find(|output| output.lock().unwrap().wl == ctx.proxy)
             .unwrap()
             .lock()
             .unwrap();
@@ -102,7 +102,7 @@ fn gamma_control_cb(ctx: EventCtx<WaylandState, ZwlrGammaControlV1>) {
         .state
         .outputs_mut()
         .iter()
-        .position(|o| o.lock().unwrap().gamma_control == ctx.proxy)
+        .position(|output| output.lock().unwrap().gamma_control == ctx.proxy)
         .expect("Received event for unknown output");
     match ctx.event {
         zwlr_gamma_control_v1::Event::GammaSize(size) => {

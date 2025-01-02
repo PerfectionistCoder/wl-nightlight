@@ -68,7 +68,7 @@ fn wl_register_cb(
             if let Some(output_index) = state
                 .outputs_mut()
                 .iter()
-                .position(|o| o.lock().unwrap().reg_name() == *name)
+                .position(|output| output.lock().unwrap().reg_name() == *name)
             {
                 let output = state.outputs_mut().swap_remove(output_index);
                 Arc::try_unwrap(output)

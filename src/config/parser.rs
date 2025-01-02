@@ -15,11 +15,11 @@ use super::{first_err, Animation, Config, Location};
 pub enum ErrorDetail {
     #[error("")]
     MissingSection,
-    #[error("Key {0} is required")]
+    #[error("Key '{0}' is required")]
     MissingKey(&'static str),
-    #[error("Value of key {0} is invalid")]
+    #[error("Value of key '{0}' is invalid")]
     Invalid(&'static str),
-    #[error("Value of key {0} is out of range")]
+    #[error("Value of key '{0}' is out of range")]
     OutOfRange(&'static str),
 }
 
@@ -33,7 +33,7 @@ pub struct Error {
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         if self.detail.len() == 1 && self.detail[0] == ErrorDetail::MissingSection {
-            writeln!(f, "Section [{}] is required", self.name)
+            writeln!(f, "Section '{}' is required", self.name)
         } else {
             writeln!(f, "In section [{}]:", self.name)?;
             first_err(&self.detail, |err| writeln!(f, " - {}", err))
@@ -102,12 +102,12 @@ pub fn parse_config(file: &Ini) -> Result<Config, ErrorList> {
 
     let mut light = Color::default();
     parse_section(file, "light", false, &mut errors, |section, detail| {
-        light_dark_closure(section, detail, &mut light)
+        light_dark(section, detail, &mut light)
     });
 
     let mut dark = light;
     parse_section(file, "dark", false, &mut errors, |section, detail| {
-        light_dark_closure(section, detail, &mut dark)
+        light_dark(section, detail, &mut dark)
     });
 
     let mut animation = Animation::default();
@@ -132,7 +132,7 @@ pub fn parse_config(file: &Ini) -> Result<Config, ErrorList> {
     }
 }
 
-fn light_dark_closure(
+fn light_dark(
     section: &Properties,
     detail: &mut ErrorDetailList,
     color: &mut Color,
@@ -154,7 +154,7 @@ fn parse_section(
     name: &'static str,
     required: bool,
     errors: &mut ErrorList,
-    closure: impl FnOnce(&Properties, &mut ErrorDetailList) -> Option<Box<dyn Section>>,
+    op: impl FnOnce(&Properties, &mut ErrorDetailList) -> Option<Box<dyn Section>>,
 ) {
     match file.section(Some(name)) {
         Some(section) => {
@@ -162,7 +162,7 @@ fn parse_section(
                 name,
                 detail: vec![],
             };
-            let section = closure(section, &mut error.detail);
+            let section = op(section, &mut error.detail);
             if let Some(section) = section {
                 error.detail.append(&mut section.check());
             }

@@ -13,10 +13,18 @@ mod config;
 mod mode;
 mod wayland;
 
-pub fn run() {
-    let cfg = Config::new(Some(String::from("example-config.ini"))).unwrap_or_else(|err| {
-        println!("{err}");
+pub fn run(mut args: impl Iterator<Item = String>) {
+    let program = args.next().unwrap();
+    let print_error = |op: Box<dyn FnOnce()>| {
+        eprint!("{program}: ");
+        op();
         exit(1);
+    };
+
+    let cfg = Config::new(Some(String::from("example-config.ini"))).unwrap_or_else(|err| {
+        print_error(Box::new(move || {
+            eprintln!("{err}");
+        }))
     });
 
     let (mut wayland, wayland_state) = wayland::WaylandClient::new().unwrap();

@@ -58,9 +58,11 @@ impl Display for ConfigErrorList {
 
 #[derive(Debug, Error)]
 pub enum Error {
-    #[error("Fail to locate config file")]
-    File,
-    #[error("Fail to load config file:\n{}", .0)]
+    #[error("cannot construct config file path: $XDG_CONFIG_HOME and $HOME are not set")]
+    Path,
+    #[error("cannot access '{0}': {1}")]
+    File(String, ini::Error),
+    #[error("cannot load config file:\n{}", .0)]
     Config(ConfigErrorList),
 }
 
@@ -78,10 +80,11 @@ impl Config {
     pub fn new(path: Option<String>) -> Result<Self, Error> {
         let file_path = path.unwrap_or(
             env::var("XDG_CONFIG_HOME")
-                .unwrap_or(env::var("HOME").map_err(|_| Error::File)? + "/.config")
+                .unwrap_or(env::var("HOME").map_err(|_| Error::Path)? + "/.config")
                 + "wl-nightlight/config.ini",
         );
-        let file = Ini::load_from_file(file_path).map_err(|_| Error::File)?;
+        let file =
+            Ini::load_from_file(&file_path).map_err(move |err| Error::File(file_path, err))?;
         parse_config(&file).map_err(|err| Error::Config(ConfigErrorList(err)))
     }
 }

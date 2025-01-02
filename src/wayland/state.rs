@@ -103,14 +103,14 @@ impl WaylandState {
         struct Arg {
             property: fn(&Color) -> Precision,
             bound: Bound<Precision>,
-            callback: OutputSetColor,
+            op: OutputSetColor,
         }
 
         const ARGS: [Arg; 2] = [
             Arg {
                 property: |c| c.temperature as Precision,
                 bound: COLOR_BOUND.temperature,
-                callback: |output: &mut WaylandOutput, step: Precision| {
+                op: |output, step| {
                     let color = output.color();
                     output.set_color(Color {
                         temperature: color.temperature + step as i16,
@@ -121,7 +121,7 @@ impl WaylandState {
             Arg {
                 property: |c| c.brightness as Precision,
                 bound: COLOR_BOUND.brightness,
-                callback: |output: &mut WaylandOutput, step: Precision| {
+                op: |output, step| {
                     let color = output.color();
                     output.set_color(Color {
                         brightness: color.brightness + step,
@@ -147,7 +147,7 @@ impl WaylandState {
                                 (arg.property)(&color),
                                 arg.bound,
                                 transition,
-                                arg.callback,
+                                arg.op,
                             );
                         }));
                     }
@@ -186,13 +186,13 @@ fn color_change_animation(
     old: Precision,
     bound: Bound<Precision>,
     transition: Transition,
-    callback: OutputSetColor,
+    op: OutputSetColor,
 ) {
     let (interval, step, wait) = calculate_interval(new, old, bound, transition);
     for i in 0..interval {
         sleep(Duration::from_secs_f32(wait));
         if i < interval - 1 {
-            callback(&mut output.lock().unwrap(), step);
+            op(&mut output.lock().unwrap(), step);
         }
     }
 }
