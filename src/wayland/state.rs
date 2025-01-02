@@ -133,6 +133,9 @@ impl WaylandState {
 
         let mut handles = vec![];
         for output in &self.outputs {
+            if output.lock().unwrap().color() == target {
+                continue;
+            }
             let output = Arc::clone(output);
             handles.push(thread::spawn(move || {
                 if transition > 0.0 {
@@ -225,7 +228,7 @@ mod tests {
         state
     }
 
-    mod instant_color_change {
+    mod instant {
         use super::*;
 
         #[test]

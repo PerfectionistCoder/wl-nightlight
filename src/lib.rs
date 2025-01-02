@@ -15,16 +15,10 @@ mod wayland;
 
 pub fn run(mut args: impl Iterator<Item = String>) {
     let program = args.next().unwrap();
-    let print_error = |op: Box<dyn FnOnce()>| {
-        eprint!("{program}: ");
-        op();
-        exit(1);
-    };
 
-    let cfg = Config::load(Some(String::from("example-config.ini"))).unwrap_or_else(|err| {
-        print_error(Box::new(move || {
-            eprintln!("{err}");
-        }))
+    let cfg = Config::load(None).unwrap_or_else(|err| {
+        eprintln!("{program}: {err}");
+        exit(1);
     });
 
     let (mut wayland, wayland_state) = wayland::WaylandClient::create().unwrap();
@@ -34,10 +28,9 @@ pub fn run(mut args: impl Iterator<Item = String>) {
         let state = Arc::clone(&state);
         thread::spawn(move || loop {
             if state.lock().unwrap().color_changed() {
-                eprintln!("update color");
-                let mut state = state.lock().unwrap();
-                wayland.poll(&mut state).unwrap();
+                wayland.poll(&mut state.lock().unwrap()).unwrap();
             }
+            sleep(Duration::from_millis(1));
         });
     }
 
@@ -50,7 +43,7 @@ pub fn run(mut args: impl Iterator<Item = String>) {
             cfg.dark()
         };
 
-        state.lock().unwrap().change_to_color(mode, {
+        let handles = state.lock().unwrap().change_to_color(mode, {
             if first {
                 first = false;
                 0.0
@@ -59,7 +52,7 @@ pub fn run(mut args: impl Iterator<Item = String>) {
             }
         });
 
-        eprintln!("wait: {}", timer.next());
         sleep(Duration::from_secs(timer.next() as u64));
+        handles.into_iter().for_each(|h| h.join().unwrap());
     }
 }

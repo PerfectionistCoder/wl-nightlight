@@ -81,7 +81,7 @@ impl Config {
         let file_path = path.unwrap_or(
             env::var("XDG_CONFIG_HOME")
                 .unwrap_or(env::var("HOME").map_err(|_| Error::Path)? + "/.config")
-                + "wl-nightlight/config.ini",
+                + "/wl-nightlight/config.ini",
         );
         let file =
             Ini::load_from_file(&file_path).map_err(move |err| Error::File(file_path, err))?;

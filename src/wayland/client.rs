@@ -1,5 +1,4 @@
 use std::io::ErrorKind;
-use std::os::fd::{AsRawFd, RawFd};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -12,12 +11,6 @@ use super::{output::WaylandOutput, state::WaylandState};
 
 pub struct WaylandClient {
     conn: Connection<WaylandState>,
-}
-
-impl AsRawFd for WaylandClient {
-    fn as_raw_fd(&self) -> RawFd {
-        self.conn.as_raw_fd()
-    }
 }
 
 impl WaylandClient {
