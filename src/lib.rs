@@ -6,11 +6,11 @@ use std::{
 };
 
 use config::Config;
-use mode::{LightMode, ModeTimer};
+use timer::{LightMode, ModeTimer};
 
 mod color;
 mod config;
-mod mode;
+mod timer;
 mod wayland;
 
 pub fn run(mut args: impl Iterator<Item = String>) {
