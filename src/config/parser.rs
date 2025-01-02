@@ -1,4 +1,8 @@
-use std::str::FromStr;
+use std::{
+    fmt::{self, Display, Formatter},
+    str::FromStr,
+    vec,
+};
 
 use ini::{Ini, Properties};
 use thiserror::Error;
@@ -7,28 +11,52 @@ use crate::color::Color;
 
 use super::{Animation, Config, Location};
 
-#[derive(Debug, Clone, Copy, Error)]
-#[cfg_attr(test, derive(PartialEq))]
-pub enum Error {
-    #[error("Section `{0}` is required")]
-    MissingSection(&'static str),
-    #[error("Key `{0}` is required")]
+#[derive(Debug, Clone, PartialEq, Error)]
+pub enum ErrorDetail {
+    #[error("")]
+    MissingSection,
+    #[error("Key {0} is required")]
     MissingKey(&'static str),
-    #[error("Value of key `{0}` is invalid")]
+    #[error("Value of key {0} is invalid")]
     Invalid(&'static str),
-    #[error("Value of key `{0}` is out of range")]
+    #[error("Value of key {0} is out of range")]
     OutOfRange(&'static str),
 }
 
+#[derive(Debug, Clone)]
+#[cfg_attr(test, derive(PartialEq))]
+pub struct Error {
+    name: &'static str,
+    detail: Vec<ErrorDetail>,
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        if self.detail.len() == 1 && self.detail[0] == ErrorDetail::MissingSection {
+            writeln!(f, "Section [{}] is required", self.name)
+        } else {
+            writeln!(f, "In section [{}]:", self.name)?;
+            *self
+                .detail
+                .iter()
+                .map(|err| writeln!(f, " - {}", err))
+                .collect::<Vec<_>>()
+                .first()
+                .unwrap_or(&Ok(()))
+        }
+    }
+}
+
 pub type ErrorList = Vec<Error>;
+type ErrorDetailList = Vec<ErrorDetail>;
 
 trait Section {
-    fn check(&self) -> ErrorList;
+    fn check(&self) -> ErrorDetailList;
 }
 
 impl Section for Color {
-    fn check(&self) -> ErrorList {
-        get_err_vec(&[
+    fn check(&self) -> ErrorDetailList {
+        to_error_list(&[
             ("temperature", in_range(self.temperature, 1000, 10000)),
             ("brightness", in_range(self.brightness, 0.0, 1.0)),
         ])
@@ -36,8 +64,8 @@ impl Section for Color {
 }
 
 impl Section for Location {
-    fn check(&self) -> ErrorList {
-        get_err_vec(&[
+    fn check(&self) -> ErrorDetailList {
+        to_error_list(&[
             ("lat", in_range(self.lat, -90.0, 90.0)),
             ("lng", in_range(self.lng, -180.0, 180.0)),
         ])
@@ -45,15 +73,16 @@ impl Section for Location {
 }
 
 impl Section for Animation {
-    fn check(&self) -> ErrorList {
-        get_err_vec(&[("transition", in_range(self.transition, 0.0, 3600.0))])
+    fn check(&self) -> ErrorDetailList {
+        to_error_list(&[("transition", in_range(self.transition, 0.0, 3600.0))])
     }
 }
 
-fn get_err_vec(arr: &[(&'static str, bool)]) -> ErrorList {
-    arr.iter()
-        .filter(|el| !el.1)
-        .map(|el| Error::OutOfRange(el.0))
+fn to_error_list(array: &[(&'static str, bool)]) -> ErrorDetailList {
+    array
+        .iter()
+        .filter(|elem| !elem.1)
+        .map(|elem| ErrorDetail::OutOfRange(elem.0))
         .collect()
 }
 
@@ -65,9 +94,9 @@ pub fn parse_config(file: &Ini) -> Result<Config, ErrorList> {
     let mut errors = vec![];
 
     let mut location = Location::default();
-    parse_section(file, "location", true, &mut errors, |section, errors| {
-        let lat = parse_key(section, "lat", true, errors);
-        let lng = parse_key(section, "lng", true, errors);
+    parse_section(file, "location", true, &mut errors, |section, detail| {
+        let lat = parse_key(section, "lat", true, detail);
+        let lng = parse_key(section, "lng", true, detail);
         if let Some(lat) = lat {
             if let Some(lng) = lng {
                 location = Location { lat, lng };
@@ -78,19 +107,18 @@ pub fn parse_config(file: &Ini) -> Result<Config, ErrorList> {
     });
 
     let mut light = Color::default();
-    parse_section(file, "light", false, &mut errors, |section, errors| {
-        light_dark_closure(section, errors, &mut light)
+    parse_section(file, "light", false, &mut errors, |section, detail| {
+        light_dark_closure(section, detail, &mut light)
     });
 
     let mut dark = light;
-    parse_section(file, "dark", false, &mut errors, |section, errors| {
-        light_dark_closure(section, errors, &mut dark)
+    parse_section(file, "dark", false, &mut errors, |section, detail| {
+        light_dark_closure(section, detail, &mut dark)
     });
 
     let mut animation = Animation::default();
-    parse_section(file, "animation", false, &mut errors, |section, errors| {
-        let transition = parse_key(section, "transition", false, errors);
-
+    parse_section(file, "animation", false, &mut errors, |section, detail| {
+        let transition = parse_key(section, "transition", false, detail);
         if let Some(v) = transition {
             animation.transition = v;
         }
@@ -112,18 +140,18 @@ pub fn parse_config(file: &Ini) -> Result<Config, ErrorList> {
 
 fn light_dark_closure(
     section: &Properties,
-    errors: &mut Vec<Error>,
+    detail: &mut ErrorDetailList,
     color: &mut Color,
 ) -> Option<Box<dyn Section>> {
-    let temperature = parse_key(section, "temperature", false, errors);
-    let brightness = parse_key(section, "brightness", false, errors);
-
+    let temperature = parse_key(section, "temperature", false, detail);
+    let brightness = parse_key(section, "brightness", false, detail);
     if let Some(v) = temperature {
         color.temperature = v;
     }
     if let Some(v) = brightness {
         color.brightness = v;
     }
+
     Some(Box::new(*color))
 }
 
@@ -132,18 +160,28 @@ fn parse_section(
     name: &'static str,
     required: bool,
     errors: &mut ErrorList,
-    closure: impl FnOnce(&Properties, &mut ErrorList) -> Option<Box<dyn Section>>,
+    closure: impl FnOnce(&Properties, &mut ErrorDetailList) -> Option<Box<dyn Section>>,
 ) {
     match file.section(Some(name)) {
         Some(section) => {
-            let section = closure(section, errors);
+            let mut error = Error {
+                name,
+                detail: vec![],
+            };
+            let section = closure(section, &mut error.detail);
             if let Some(section) = section {
-                errors.append(&mut section.check());
+                error.detail.append(&mut section.check());
+            }
+            if !error.detail.is_empty() {
+                errors.push(error);
             }
         }
         None => {
             if required {
-                errors.push(Error::MissingSection(name))
+                errors.push(Error {
+                    name,
+                    detail: vec![ErrorDetail::MissingSection],
+                })
             };
         }
     }
@@ -153,19 +191,19 @@ fn parse_key<T: FromStr>(
     section: &Properties,
     name: &'static str,
     required: bool,
-    errors: &mut ErrorList,
+    detail: &mut ErrorDetailList,
 ) -> Option<T> {
     match section.get(name) {
         Some(key) => match key.parse() {
             Ok(v) => Some(v),
             Err(_) => {
-                errors.push(Error::Invalid(name));
+                detail.push(ErrorDetail::Invalid(name));
                 None
             }
         },
         None => {
             if required {
-                errors.push(Error::MissingKey(name));
+                detail.push(ErrorDetail::MissingKey(name));
             }
             None
         }
@@ -202,7 +240,13 @@ mod tests {
     #[test]
     fn empty() {
         setup(DISCARD_WRITE, DISCARD_ASSERT, |err| {
-            assert_eq!(err, vec![Error::MissingSection("location")])
+            assert_eq!(
+                err,
+                vec![Error {
+                    name: "location",
+                    detail: vec![ErrorDetail::MissingSection]
+                }]
+            )
         });
     }
 
@@ -242,7 +286,13 @@ mod tests {
             },
             DISCARD_ASSERT,
             |err| {
-                assert_eq!(err, vec![Error::MissingKey("lng")]);
+                assert_eq!(
+                    err,
+                    vec![Error {
+                        name: "location",
+                        detail: vec![ErrorDetail::MissingKey("lng")]
+                    }]
+                );
             },
         );
     }
@@ -255,7 +305,13 @@ mod tests {
             },
             DISCARD_ASSERT,
             |err| {
-                assert_eq!(err, vec![Error::MissingKey("lat")]);
+                assert_eq!(
+                    err,
+                    vec![Error {
+                        name: "location",
+                        detail: vec![ErrorDetail::MissingKey("lat")]
+                    }]
+                );
             },
         );
     }
@@ -270,7 +326,13 @@ mod tests {
             },
             DISCARD_ASSERT,
             |err| {
-                assert_eq!(err, vec![Error::Invalid("lat"), Error::Invalid("lng")]);
+                assert_eq!(
+                    err,
+                    vec![Error {
+                        name: "location",
+                        detail: vec![ErrorDetail::Invalid("lat"), ErrorDetail::Invalid("lng")]
+                    },]
+                );
             },
         );
     }
@@ -332,7 +394,13 @@ mod tests {
             |err| {
                 assert_eq!(
                     err,
-                    vec![Error::Invalid("temperature"), Error::Invalid("brightness")]
+                    vec![Error {
+                        name: "light",
+                        detail: vec![
+                            ErrorDetail::Invalid("temperature"),
+                            ErrorDetail::Invalid("brightness")
+                        ]
+                    },]
                 );
             },
         );
@@ -399,7 +467,13 @@ mod tests {
             |err| {
                 assert_eq!(
                     err,
-                    vec![Error::Invalid("temperature"), Error::Invalid("brightness")]
+                    vec![Error {
+                        name: "dark",
+                        detail: vec![
+                            ErrorDetail::Invalid("temperature"),
+                            ErrorDetail::Invalid("brightness")
+                        ]
+                    },]
                 );
             },
         );
@@ -431,7 +505,13 @@ mod tests {
             },
             DISCARD_ASSERT,
             |err| {
-                assert_eq!(err, vec![Error::Invalid("transition")]);
+                assert_eq!(
+                    err,
+                    vec![Error {
+                        name: "animation",
+                        detail: vec![ErrorDetail::Invalid("transition")]
+                    }]
+                );
             },
         );
     }

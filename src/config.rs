@@ -1,4 +1,7 @@
-use std::{env, fmt};
+use std::{
+    env,
+    fmt::{self, Display, Formatter},
+};
 
 use getset::CopyGetters;
 use ini::Ini;
@@ -36,14 +39,17 @@ impl Default for Animation {
 }
 
 #[derive(Debug)]
-pub struct ParseErrorList(ErrorList);
+pub struct ConfigErrorList(ErrorList);
 
-impl fmt::Display for ParseErrorList {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        self.0.iter().for_each(|err| {
-            let _ = writeln!(f, "{}", err);
-        });
-        Ok(())
+impl Display for ConfigErrorList {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        *self
+            .0
+            .iter()
+            .map(|err| write!(f, "{}", err))
+            .collect::<Vec<_>>()
+            .first()
+            .unwrap_or(&Ok(()))
     }
 }
 
@@ -52,7 +58,7 @@ pub enum Error {
     #[error("Fail to locate config file")]
     File,
     #[error("Fail to load config file:\n{}", .0)]
-    Config(ParseErrorList),
+    Config(ConfigErrorList),
 }
 
 #[derive(CopyGetters)]
@@ -73,6 +79,6 @@ impl Config {
                 + "wl-nightlight/config.ini",
         );
         let file = Ini::load_from_file(file_path).map_err(|_| Error::File)?;
-        parse_config(&file).map_err(|err| Error::Config(ParseErrorList(err)))
+        parse_config(&file).map_err(|err| Error::Config(ConfigErrorList(err)))
     }
 }
