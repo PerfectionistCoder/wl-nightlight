@@ -34,7 +34,7 @@ pub struct WaylandState {
 }
 
 impl WaylandState {
-    pub fn new(conn: &mut Connection<Self>, globals: Vec<GlobalArgs>) -> Result<Self> {
+    pub fn bind(conn: &mut Connection<Self>, globals: Vec<GlobalArgs>) -> Result<Self> {
         let Ok(gamma_manager) = globals.bind(conn, 1) else {
             bail!("Your Wayland compositor is not supported because it does not implement the wlr-gamma-control-unstable-v1 protocol");
         };
@@ -220,7 +220,7 @@ mod tests {
     }
 
     fn get_state() -> WaylandState {
-        let (_, state) = WaylandClient::new().unwrap();
+        let (_, state) = WaylandClient::create().unwrap();
         state_helper(&state, ORIGINAL);
         state
     }

@@ -21,11 +21,11 @@ impl AsRawFd for WaylandClient {
 }
 
 impl WaylandClient {
-    pub fn new() -> Result<(Self, WaylandState)> {
+    pub fn create() -> Result<(Self, WaylandState)> {
         let (mut conn, globals) = Connection::connect_and_collect_globals()?;
         conn.add_registry_cb(wl_register_cb);
 
-        let state = WaylandState::new(&mut conn, globals)?;
+        let state = WaylandState::bind(&mut conn, globals)?;
 
         conn.flush(IoMode::Blocking)?;
 

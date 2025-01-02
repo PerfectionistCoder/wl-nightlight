@@ -77,7 +77,7 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn new(path: Option<String>) -> Result<Self, Error> {
+    pub fn load(path: Option<String>) -> Result<Self, Error> {
         let file_path = path.unwrap_or(
             env::var("XDG_CONFIG_HOME")
                 .unwrap_or(env::var("HOME").map_err(|_| Error::Path)? + "/.config")

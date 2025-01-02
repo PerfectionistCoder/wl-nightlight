@@ -21,13 +21,13 @@ pub fn run(mut args: impl Iterator<Item = String>) {
         exit(1);
     };
 
-    let cfg = Config::new(Some(String::from("example-config.ini"))).unwrap_or_else(|err| {
+    let cfg = Config::load(Some(String::from("example-config.ini"))).unwrap_or_else(|err| {
         print_error(Box::new(move || {
             eprintln!("{err}");
         }))
     });
 
-    let (mut wayland, wayland_state) = wayland::WaylandClient::new().unwrap();
+    let (mut wayland, wayland_state) = wayland::WaylandClient::create().unwrap();
     let state = Arc::new(Mutex::new(wayland_state));
 
     {
