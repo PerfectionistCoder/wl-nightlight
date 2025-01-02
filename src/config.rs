@@ -41,15 +41,18 @@ impl Default for Animation {
 #[derive(Debug)]
 pub struct ConfigErrorList(ErrorList);
 
+fn first_err<T>(vec: &[T], op: impl FnMut(&T) -> fmt::Result) -> fmt::Result {
+    *vec.iter()
+        .map(op)
+        .filter(|res| res.is_err())
+        .collect::<Vec<_>>()
+        .first()
+        .unwrap_or(&Ok(()))
+}
+
 impl Display for ConfigErrorList {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        *self
-            .0
-            .iter()
-            .map(|err| write!(f, "{}", err))
-            .collect::<Vec<_>>()
-            .first()
-            .unwrap_or(&Ok(()))
+        first_err(&self.0, |err| write!(f, "{}", err))
     }
 }
 

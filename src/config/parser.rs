@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::color::Color;
 
-use super::{Animation, Config, Location};
+use super::{first_err, Animation, Config, Location};
 
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum ErrorDetail {
@@ -36,13 +36,7 @@ impl Display for Error {
             writeln!(f, "Section [{}] is required", self.name)
         } else {
             writeln!(f, "In section [{}]:", self.name)?;
-            *self
-                .detail
-                .iter()
-                .map(|err| writeln!(f, " - {}", err))
-                .collect::<Vec<_>>()
-                .first()
-                .unwrap_or(&Ok(()))
+            first_err(&self.detail, |err| writeln!(f, " - {}", err))
         }
     }
 }
@@ -237,104 +231,11 @@ mod tests {
     const DISCARD_ASSERT: fn(Config) = |_| {};
     const DISCARD_ERROR: fn(ErrorList) = |_| {};
 
-    #[test]
-    fn empty() {
-        setup(DISCARD_WRITE, DISCARD_ASSERT, |err| {
-            assert_eq!(
-                err,
-                vec![Error {
-                    name: "location",
-                    detail: vec![ErrorDetail::MissingSection]
-                }]
-            )
-        });
-    }
-
     fn write_location(conf: &mut Ini, location: Option<&Location>) {
         let location = location.unwrap_or(&Location { lat: 0.0, lng: 0.0 });
         conf.with_section(Some("location"))
             .set("lat", location.lat.to_string())
             .set("lng", location.lng.to_string());
-    }
-
-    #[test]
-    fn minimal() {
-        let location = Location {
-            lat: 51.51,
-            lng: -0.12,
-        };
-
-        setup(
-            |conf| {
-                write_location(conf, Some(&location));
-            },
-            |cfg| {
-                assert_eq!(cfg.location, location);
-                assert_eq!(cfg.light, Color::default());
-                assert_eq!(cfg.dark, Color::default());
-                assert_eq!(cfg.animation, Animation::default());
-            },
-            DISCARD_ERROR,
-        );
-    }
-
-    #[test]
-    fn partial_location_1() {
-        setup(
-            |conf| {
-                conf.with_section(Some("location")).set("lat", "0");
-            },
-            DISCARD_ASSERT,
-            |err| {
-                assert_eq!(
-                    err,
-                    vec![Error {
-                        name: "location",
-                        detail: vec![ErrorDetail::MissingKey("lng")]
-                    }]
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn partial_location_2() {
-        setup(
-            |conf| {
-                conf.with_section(Some("location")).set("lng", "0");
-            },
-            DISCARD_ASSERT,
-            |err| {
-                assert_eq!(
-                    err,
-                    vec![Error {
-                        name: "location",
-                        detail: vec![ErrorDetail::MissingKey("lat")]
-                    }]
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn invalid_location() {
-        setup(
-            |conf| {
-                conf.with_section(Some("location"))
-                    .set("lat", "")
-                    .set("lng", "");
-            },
-            DISCARD_ASSERT,
-            |err| {
-                assert_eq!(
-                    err,
-                    vec![Error {
-                        name: "location",
-                        detail: vec![ErrorDetail::Invalid("lat"), ErrorDetail::Invalid("lng")]
-                    },]
-                );
-            },
-        );
     }
 
     fn write_mode(conf: &mut Ini, section: &str, color: &Color) {
@@ -343,176 +244,281 @@ mod tests {
             .set("brightness", color.brightness.to_string());
     }
 
-    #[test]
-    fn light() {
-        let color = Color {
-            temperature: 5000,
-            brightness: 0.5,
-        };
+    mod section {
+        use super::*;
 
-        setup(
-            |conf| {
-                write_location(conf, None);
-                write_mode(conf, "light", &color);
-            },
-            |cfg| {
-                assert_eq!(cfg.light, color);
-                assert_eq!(cfg.dark, color);
-            },
-            DISCARD_ERROR,
-        );
-    }
-
-    #[test]
-    fn partial_light() {
-        let brightness = 0.5;
-
-        setup(
-            |conf| {
-                write_location(conf, None);
-                conf.with_section(Some("light"))
-                    .set("brightness", brightness.to_string());
-            },
-            |cfg| {
-                assert_eq!(cfg.light.brightness, brightness);
-                assert_eq!(cfg.dark.temperature, Color::default().temperature);
-            },
-            DISCARD_ERROR,
-        );
-    }
-
-    #[test]
-    fn invalid_light() {
-        setup(
-            |conf| {
-                write_location(conf, None);
-                conf.with_section(Some("light"))
-                    .set("temperature", "")
-                    .set("brightness", "");
-            },
-            DISCARD_ASSERT,
-            |err| {
+        #[test]
+        fn empty() {
+            setup(DISCARD_WRITE, DISCARD_ASSERT, |err| {
                 assert_eq!(
                     err,
                     vec![Error {
-                        name: "light",
-                        detail: vec![
-                            ErrorDetail::Invalid("temperature"),
-                            ErrorDetail::Invalid("brightness")
-                        ]
-                    },]
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn dark() {
-        let color1 = Color {
-            temperature: 1000,
-            brightness: 0.0,
-        };
-        let color2 = Color {
-            temperature: 10000,
-            brightness: 1.0,
-        };
-
-        setup(
-            |conf| {
-                write_location(conf, None);
-                write_mode(conf, "light", &color1);
-                write_mode(conf, "dark", &color2);
-            },
-            |cfg| {
-                assert_eq!(cfg.light, color1);
-                assert_eq!(cfg.dark, color2);
-            },
-            DISCARD_ERROR,
-        );
-    }
-
-    #[test]
-    fn partial_dark() {
-        let color = Color {
-            temperature: 5000,
-            brightness: 0.5,
-        };
-        let temperature = 4000;
-
-        setup(
-            |conf| {
-                write_location(conf, None);
-                write_mode(conf, "light", &color);
-                conf.with_section(Some("dark"))
-                    .set("temperature", temperature.to_string());
-            },
-            |cfg| {
-                assert_eq!(cfg.dark.temperature, temperature);
-                assert_eq!(cfg.dark.brightness, color.brightness);
-            },
-            DISCARD_ERROR,
-        );
-    }
-
-    #[test]
-    fn invalid_dark() {
-        setup(
-            |conf| {
-                write_location(conf, None);
-                conf.with_section(Some("dark"))
-                    .set("temperature", "")
-                    .set("brightness", "");
-            },
-            DISCARD_ASSERT,
-            |err| {
-                assert_eq!(
-                    err,
-                    vec![Error {
-                        name: "dark",
-                        detail: vec![
-                            ErrorDetail::Invalid("temperature"),
-                            ErrorDetail::Invalid("brightness")
-                        ]
-                    },]
-                );
-            },
-        );
-    }
-
-    #[test]
-    fn animation() {
-        let transition = 10.0;
-
-        setup(
-            |conf| {
-                write_location(conf, None);
-                conf.with_section(Some("animation"))
-                    .set("transition", transition.to_string());
-            },
-            |cfg| {
-                assert_eq!(cfg.animation.transition, transition);
-            },
-            DISCARD_ERROR,
-        );
-    }
-
-    #[test]
-    fn invalid_animation() {
-        setup(
-            |conf| {
-                write_location(conf, None);
-                conf.with_section(Some("animation")).set("transition", "");
-            },
-            DISCARD_ASSERT,
-            |err| {
-                assert_eq!(
-                    err,
-                    vec![Error {
-                        name: "animation",
-                        detail: vec![ErrorDetail::Invalid("transition")]
+                        name: "location",
+                        detail: vec![ErrorDetail::MissingSection]
                     }]
-                );
-            },
-        );
+                )
+            });
+        }
+
+        #[test]
+        fn location() {
+            let location = Location {
+                lat: 51.51,
+                lng: -0.12,
+            };
+
+            setup(
+                |conf| {
+                    write_location(conf, Some(&location));
+                },
+                |cfg| {
+                    assert_eq!(cfg.location, location);
+                    assert_eq!(cfg.light, Color::default());
+                    assert_eq!(cfg.dark, Color::default());
+                    assert_eq!(cfg.animation, Animation::default());
+                },
+                DISCARD_ERROR,
+            );
+        }
+
+        #[test]
+        fn light() {
+            let color = Color {
+                temperature: 5000,
+                brightness: 0.5,
+            };
+
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    write_mode(conf, "light", &color);
+                },
+                |cfg| {
+                    assert_eq!(cfg.light, color);
+                    assert_eq!(cfg.dark, color);
+                },
+                DISCARD_ERROR,
+            );
+        }
+
+        #[test]
+        fn dark() {
+            let color1 = Color {
+                temperature: 1000,
+                brightness: 0.0,
+            };
+            let color2 = Color {
+                temperature: 10000,
+                brightness: 1.0,
+            };
+
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    write_mode(conf, "light", &color1);
+                    write_mode(conf, "dark", &color2);
+                },
+                |cfg| {
+                    assert_eq!(cfg.light, color1);
+                    assert_eq!(cfg.dark, color2);
+                },
+                DISCARD_ERROR,
+            );
+        }
+
+        #[test]
+        fn animation() {
+            let transition = 10.0;
+
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    conf.with_section(Some("animation"))
+                        .set("transition", transition.to_string());
+                },
+                |cfg| {
+                    assert_eq!(cfg.animation.transition, transition);
+                },
+                DISCARD_ERROR,
+            );
+        }
+    }
+
+    mod partial {
+        use super::*;
+
+        #[test]
+        fn location_1() {
+            setup(
+                |conf| {
+                    conf.with_section(Some("location")).set("lat", "0");
+                },
+                DISCARD_ASSERT,
+                |err| {
+                    assert_eq!(
+                        err,
+                        vec![Error {
+                            name: "location",
+                            detail: vec![ErrorDetail::MissingKey("lng")]
+                        }]
+                    );
+                },
+            );
+        }
+
+        #[test]
+        fn location_2() {
+            setup(
+                |conf| {
+                    conf.with_section(Some("location")).set("lng", "0");
+                },
+                DISCARD_ASSERT,
+                |err| {
+                    assert_eq!(
+                        err,
+                        vec![Error {
+                            name: "location",
+                            detail: vec![ErrorDetail::MissingKey("lat")]
+                        }]
+                    );
+                },
+            );
+        }
+
+        #[test]
+        fn light() {
+            let brightness = 0.5;
+
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    conf.with_section(Some("light"))
+                        .set("brightness", brightness.to_string());
+                },
+                |cfg| {
+                    assert_eq!(cfg.light.brightness, brightness);
+                    assert_eq!(cfg.dark.temperature, Color::default().temperature);
+                },
+                DISCARD_ERROR,
+            );
+        }
+
+        #[test]
+        fn dark() {
+            let color = Color {
+                temperature: 5000,
+                brightness: 0.5,
+            };
+            let temperature = 4000;
+
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    write_mode(conf, "light", &color);
+                    conf.with_section(Some("dark"))
+                        .set("temperature", temperature.to_string());
+                },
+                |cfg| {
+                    assert_eq!(cfg.dark.temperature, temperature);
+                    assert_eq!(cfg.dark.brightness, color.brightness);
+                },
+                DISCARD_ERROR,
+            );
+        }
+    }
+
+    mod invalid {
+        use super::*;
+
+        #[test]
+        fn location() {
+            setup(
+                |conf| {
+                    conf.with_section(Some("location"))
+                        .set("lat", "")
+                        .set("lng", "");
+                },
+                DISCARD_ASSERT,
+                |err| {
+                    assert_eq!(
+                        err,
+                        vec![Error {
+                            name: "location",
+                            detail: vec![ErrorDetail::Invalid("lat"), ErrorDetail::Invalid("lng")]
+                        },]
+                    );
+                },
+            );
+        }
+
+        #[test]
+        fn light() {
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    conf.with_section(Some("light"))
+                        .set("temperature", "")
+                        .set("brightness", "");
+                },
+                DISCARD_ASSERT,
+                |err| {
+                    assert_eq!(
+                        err,
+                        vec![Error {
+                            name: "light",
+                            detail: vec![
+                                ErrorDetail::Invalid("temperature"),
+                                ErrorDetail::Invalid("brightness")
+                            ]
+                        },]
+                    );
+                },
+            );
+        }
+
+        #[test]
+        fn dark() {
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    conf.with_section(Some("dark"))
+                        .set("temperature", "")
+                        .set("brightness", "");
+                },
+                DISCARD_ASSERT,
+                |err| {
+                    assert_eq!(
+                        err,
+                        vec![Error {
+                            name: "dark",
+                            detail: vec![
+                                ErrorDetail::Invalid("temperature"),
+                                ErrorDetail::Invalid("brightness")
+                            ]
+                        },]
+                    );
+                },
+            );
+        }
+
+        #[test]
+        fn animation() {
+            setup(
+                |conf| {
+                    write_location(conf, None);
+                    conf.with_section(Some("animation")).set("transition", "");
+                },
+                DISCARD_ASSERT,
+                |err| {
+                    assert_eq!(
+                        err,
+                        vec![Error {
+                            name: "animation",
+                            detail: vec![ErrorDetail::Invalid("transition")]
+                        }]
+                    );
+                },
+            );
+        }
     }
 }
