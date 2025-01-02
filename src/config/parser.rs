@@ -9,12 +9,11 @@ use thiserror::Error;
 
 use crate::color::Color;
 
-use super::{first_err, Animation, Config, Location};
+use super::{vec_write, Animation, Config, Location};
 
-#[derive(Debug, Clone, PartialEq, Error)]
-pub enum ErrorDetail {
-    #[error("")]
-    MissingSection,
+#[derive(Debug, Error)]
+#[cfg_attr(test, derive(PartialEq))]
+enum KeyValueError {
     #[error("Key '{0}' is required")]
     MissingKey(&'static str),
     #[error("Value of key '{0}' is invalid")]
@@ -23,33 +22,34 @@ pub enum ErrorDetail {
     OutOfRange(&'static str),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
-pub struct Error {
-    name: &'static str,
-    detail: Vec<ErrorDetail>,
-}
+pub struct KeyValueErrors(Vec<KeyValueError>);
 
-impl Display for Error {
+impl Display for KeyValueErrors {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        if self.detail.len() == 1 && self.detail[0] == ErrorDetail::MissingSection {
-            writeln!(f, "Section '{}' is required", self.name)
-        } else {
-            writeln!(f, "In section [{}]:", self.name)?;
-            first_err(&self.detail, |err| writeln!(f, " - {}", err))
-        }
+        vec_write(&self.0, |err| writeln!(f, " - {}", err))
     }
 }
 
+#[derive(Debug, Error)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum Error {
+    #[error("Section '{0}' is required\n")]
+    Section(&'static str),
+    #[error("In section [{0}]: \n{1}")]
+    Key(&'static str, KeyValueErrors),
+}
+
 pub type ErrorList = Vec<Error>;
-type ErrorDetailList = Vec<ErrorDetail>;
+type KeyErrorList = Vec<KeyValueError>;
 
 trait Section {
-    fn check(&self) -> ErrorDetailList;
+    fn check(&self) -> KeyErrorList;
 }
 
 impl Section for Color {
-    fn check(&self) -> ErrorDetailList {
+    fn check(&self) -> KeyErrorList {
         to_error_list(&[
             ("temperature", in_range(self.temperature, 1000, 10000)),
             ("brightness", in_range(self.brightness, 0.0, 1.0)),
@@ -58,7 +58,7 @@ impl Section for Color {
 }
 
 impl Section for Location {
-    fn check(&self) -> ErrorDetailList {
+    fn check(&self) -> KeyErrorList {
         to_error_list(&[
             ("lat", in_range(self.lat, -90.0, 90.0)),
             ("lng", in_range(self.lng, -180.0, 180.0)),
@@ -67,16 +67,16 @@ impl Section for Location {
 }
 
 impl Section for Animation {
-    fn check(&self) -> ErrorDetailList {
+    fn check(&self) -> KeyErrorList {
         to_error_list(&[("transition", in_range(self.transition, 0.0, 3600.0))])
     }
 }
 
-fn to_error_list(array: &[(&'static str, bool)]) -> ErrorDetailList {
+fn to_error_list(array: &[(&'static str, bool)]) -> KeyErrorList {
     array
         .iter()
         .filter(|elem| !elem.1)
-        .map(|elem| ErrorDetail::OutOfRange(elem.0))
+        .map(|elem| KeyValueError::OutOfRange(elem.0))
         .collect()
 }
 
@@ -134,7 +134,7 @@ pub fn parse_config(file: &Ini) -> Result<Config, ErrorList> {
 
 fn light_dark(
     section: &Properties,
-    detail: &mut ErrorDetailList,
+    detail: &mut KeyErrorList,
     color: &mut Color,
 ) -> Option<Box<dyn Section>> {
     let temperature = parse_key(section, "temperature", false, detail);
@@ -154,28 +154,22 @@ fn parse_section(
     name: &'static str,
     required: bool,
     errors: &mut ErrorList,
-    op: impl FnOnce(&Properties, &mut ErrorDetailList) -> Option<Box<dyn Section>>,
+    op: impl FnOnce(&Properties, &mut KeyErrorList) -> Option<Box<dyn Section>>,
 ) {
     match file.section(Some(name)) {
         Some(section) => {
-            let mut error = Error {
-                name,
-                detail: vec![],
-            };
-            let section = op(section, &mut error.detail);
+            let mut key_errors = vec![];
+            let section = op(section, &mut key_errors);
             if let Some(section) = section {
-                error.detail.append(&mut section.check());
+                key_errors.append(&mut section.check());
             }
-            if !error.detail.is_empty() {
-                errors.push(error);
+            if !key_errors.is_empty() {
+                errors.push(Error::Key(name, KeyValueErrors(key_errors)));
             }
         }
         None => {
             if required {
-                errors.push(Error {
-                    name,
-                    detail: vec![ErrorDetail::MissingSection],
-                })
+                errors.push(Error::Section(name))
             };
         }
     }
@@ -185,19 +179,19 @@ fn parse_key<T: FromStr>(
     section: &Properties,
     name: &'static str,
     required: bool,
-    detail: &mut ErrorDetailList,
+    detail: &mut KeyErrorList,
 ) -> Option<T> {
     match section.get(name) {
         Some(key) => match key.parse() {
             Ok(v) => Some(v),
             Err(_) => {
-                detail.push(ErrorDetail::Invalid(name));
+                detail.push(KeyValueError::Invalid(name));
                 None
             }
         },
         None => {
             if required {
-                detail.push(ErrorDetail::MissingKey(name));
+                detail.push(KeyValueError::MissingKey(name));
             }
             None
         }
@@ -250,13 +244,7 @@ mod tests {
         #[test]
         fn empty() {
             setup(DISCARD_WRITE, DISCARD_ASSERT, |err| {
-                assert_eq!(
-                    err,
-                    vec![Error {
-                        name: "location",
-                        detail: vec![ErrorDetail::MissingSection]
-                    }]
-                )
+                assert_eq!(err, vec![Error::Section("location")]);
             });
         }
 
@@ -357,10 +345,10 @@ mod tests {
                 |err| {
                     assert_eq!(
                         err,
-                        vec![Error {
-                            name: "location",
-                            detail: vec![ErrorDetail::MissingKey("lng")]
-                        }]
+                        vec![Error::Key(
+                            "location",
+                            KeyValueErrors(vec![KeyValueError::MissingKey("lng")])
+                        )]
                     );
                 },
             );
@@ -376,10 +364,10 @@ mod tests {
                 |err| {
                     assert_eq!(
                         err,
-                        vec![Error {
-                            name: "location",
-                            detail: vec![ErrorDetail::MissingKey("lat")]
-                        }]
+                        vec![Error::Key(
+                            "location",
+                            KeyValueErrors(vec![KeyValueError::MissingKey("lat")])
+                        )]
                     );
                 },
             );
@@ -442,10 +430,13 @@ mod tests {
                 |err| {
                     assert_eq!(
                         err,
-                        vec![Error {
-                            name: "location",
-                            detail: vec![ErrorDetail::Invalid("lat"), ErrorDetail::Invalid("lng")]
-                        },]
+                        vec![Error::Key(
+                            "location",
+                            KeyValueErrors(vec![
+                                KeyValueError::Invalid("lat"),
+                                KeyValueError::Invalid("lng")
+                            ])
+                        )]
                     );
                 },
             );
@@ -464,13 +455,13 @@ mod tests {
                 |err| {
                     assert_eq!(
                         err,
-                        vec![Error {
-                            name: "light",
-                            detail: vec![
-                                ErrorDetail::Invalid("temperature"),
-                                ErrorDetail::Invalid("brightness")
-                            ]
-                        },]
+                        vec![Error::Key(
+                            "light",
+                            KeyValueErrors(vec![
+                                KeyValueError::Invalid("temperature"),
+                                KeyValueError::Invalid("brightness")
+                            ])
+                        )]
                     );
                 },
             );
@@ -489,13 +480,13 @@ mod tests {
                 |err| {
                     assert_eq!(
                         err,
-                        vec![Error {
-                            name: "dark",
-                            detail: vec![
-                                ErrorDetail::Invalid("temperature"),
-                                ErrorDetail::Invalid("brightness")
-                            ]
-                        },]
+                        vec![Error::Key(
+                            "dark",
+                            KeyValueErrors(vec![
+                                KeyValueError::Invalid("temperature"),
+                                KeyValueError::Invalid("brightness")
+                            ])
+                        )]
                     );
                 },
             );
@@ -512,10 +503,10 @@ mod tests {
                 |err| {
                     assert_eq!(
                         err,
-                        vec![Error {
-                            name: "animation",
-                            detail: vec![ErrorDetail::Invalid("transition")]
-                        }]
+                        vec![Error::Key(
+                            "animation",
+                            KeyValueErrors(vec![KeyValueError::Invalid("transition"),])
+                        )]
                     );
                 },
             );
