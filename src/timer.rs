@@ -1,14 +1,14 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use getset::CopyGetters;
-use sun_time::{SunTime, Timestamp};
+use sunrise_sunset_calculator::{SunriseSunsetParameters, SunriseSunsetResult};
 
 use crate::config::{Latitude, Longitude};
 
-mod sun_time;
-
 #[cfg(test)]
 mod test_utils;
+
+type Timestamp = i64;
 
 #[derive(Clone, Copy, PartialEq)]
 #[cfg_attr(test, derive(Debug))]
@@ -34,16 +34,22 @@ impl ModeTimer {
     }
 
     fn get_timer(lat: Latitude, lng: Longitude, timestamp: Timestamp) -> Self {
-        let sun_time = SunTime::new(lat, lng, timestamp);
+        let SunriseSunsetResult {
+            set: sunset,
+            rise: sunrise,
+            ..
+        } = SunriseSunsetParameters::new(timestamp, lat, lng)
+            .calculate()
+            .unwrap();
 
-        if sun_time.sunrise() < timestamp && timestamp < sun_time.sunset() {
+        if sunrise < timestamp && timestamp < sunset {
             Self {
-                next: sun_time.sunset() - timestamp,
+                next: sunset - timestamp,
                 mode: LightMode::Light,
             }
         } else {
             Self {
-                next: sun_time.sunrise() - timestamp,
+                next: sunrise - timestamp,
                 mode: LightMode::Dark,
             }
         }
@@ -54,30 +60,79 @@ impl ModeTimer {
 mod tests {
     use super::test_utils::*;
     use super::*;
+    const HOUR: i64 = 3600;
 
-    const HOUR: i32 = 3600;
+    mod narobi {
+        use super::*;
 
-    #[test]
-    fn noon() {
-        let timestamp = get_timestamp(6, 12, NAIROBI.offset);
-        let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp);
-        assert_eq!(timer.mode, LightMode::Light);
-        assert!((timer.next - 6 * HOUR).abs() < HOUR);
+        fn get_mode_timer(hour: u32) -> ModeTimer {
+            let timestamp = get_timestamp(1, hour, NAIROBI.offset);
+            ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp)
+        }
+
+        #[test]
+        fn before_sunrise() {
+            let ModeTimer { next, mode } = get_mode_timer(5);
+            assert_eq!(mode, LightMode::Dark);
+            assert!(next > HOUR);
+            assert!(next < HOUR * 2);
+        }
+
+        #[test]
+        fn after_sunrise() {
+            let ModeTimer { mode, .. } = get_mode_timer(7);
+            assert_eq!(mode, LightMode::Light);
+        }
+
+        #[test]
+        fn noon() {
+            let ModeTimer { next, mode } = get_mode_timer(12);
+            assert_eq!(mode, LightMode::Light);
+            assert!(next > 6 * HOUR);
+            assert!(next < 7 * HOUR);
+        }
+
+        #[test]
+        fn before_sunset() {
+            let ModeTimer { next, mode } = get_mode_timer(18);
+            assert_eq!(mode, LightMode::Light);
+            assert!(next < HOUR);
+        }
+
+        #[test]
+        fn after_sunset() {
+            let ModeTimer { next, mode } = get_mode_timer(19);
+            assert_eq!(mode, LightMode::Dark);
+            assert!(next > 11 * HOUR);
+            assert!(next < 12 * HOUR);
+        }
     }
 
-    #[test]
-    fn early_morning() {
-        let timestamp = get_timestamp(6, 3, NAIROBI.offset);
-        let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp);
-        assert_eq!(timer.mode, LightMode::Dark);
-        assert!((timer.next - 3 * HOUR).abs() < HOUR);
-    }
+    mod london {
+        use super::*;
 
-    #[test]
-    fn late_night() {
-        let timestamp = get_timestamp(6, 22, NAIROBI.offset);
-        let timer = ModeTimer::get_timer(NAIROBI.lat, NAIROBI.lng, timestamp);
-        assert_eq!(timer.mode, LightMode::Dark);
-        assert!((timer.next - 8 * HOUR).abs() < HOUR);
+        fn get_mode_timer(month: u32, hour: u32) -> ModeTimer {
+            let timestamp = get_timestamp(month, hour, LONDON.offset);
+            ModeTimer::get_timer(LONDON.lat, LONDON.lng, timestamp)
+        }
+
+        #[test]
+        fn afternoon() {
+            let ModeTimer { mode, next } = get_mode_timer(6, 14);
+            assert_eq!(mode, LightMode::Light);
+            assert!(next > 4 * HOUR);
+            assert!(next < 5 * HOUR);
+        }
+
+        #[test]
+        fn summer_winter() {
+            let summer_morning = get_mode_timer(6, 0);
+            let winter_morning = get_mode_timer(1, 0);
+            assert!(summer_morning.next < winter_morning.next);
+
+            let summer_night = get_mode_timer(6, 14);
+            let winter_night = get_mode_timer(1, 14);
+            assert!(winter_night.next < summer_night.next);
+        }
     }
 }

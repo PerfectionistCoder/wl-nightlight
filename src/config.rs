@@ -12,7 +12,7 @@ use crate::color::Color;
 
 mod parser;
 
-pub type Latitude = f32;
+pub type Latitude = f64;
 pub type Longitude = Latitude;
 
 #[derive(Clone, Copy, Default, CopyGetters)]

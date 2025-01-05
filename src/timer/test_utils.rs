@@ -1,8 +1,6 @@
-use crate::{
-    config::{Latitude, Longitude},
-    timer::sun_time::{SunTime, Timestamp},
-};
-use chrono::{DateTime, FixedOffset, NaiveDate, NaiveDateTime, NaiveTime, TimeZone};
+use chrono::*;
+
+use super::{Latitude, Longitude, Timestamp};
 
 pub struct LatLng {
     pub lat: Latitude,
@@ -35,26 +33,12 @@ pub fn get_timestamp(month: u32, hour: u32, offset: i32) -> Timestamp {
     tz_offset
         .from_local_datetime(&datetime)
         .unwrap()
-        .timestamp() as i32
+        .timestamp()
 }
 
 pub fn get_datetime(timestamp: Timestamp, offset: i32) -> DateTime<FixedOffset> {
     let tz = get_offset_hour(offset);
-    DateTime::from_timestamp(timestamp as i64, 0)
+    DateTime::from_timestamp(timestamp, 0)
         .unwrap()
         .with_timezone(&tz)
-}
-
-pub struct SunTimeDate {
-    pub sunrise: DateTime<FixedOffset>,
-    pub sunset: DateTime<FixedOffset>,
-}
-
-impl SunTimeDate {
-    pub fn new(sun_time: SunTime, offset: i32) -> Self {
-        Self {
-            sunrise: get_datetime(sun_time.sunrise(), offset),
-            sunset: get_datetime(sun_time.sunset(), offset),
-        }
-    }
 }
