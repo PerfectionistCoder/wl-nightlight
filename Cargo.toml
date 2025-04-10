@@ -4,5 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bytemuck = "1.22.0"
+memmap2 = "0.9.5"
+shmemfdrs2 = "1.0.0"
 wayland-client = "0.31.8"
 wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }
