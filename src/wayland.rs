@@ -1,4 +1,4 @@
-use std::{fs::OpenOptions, io::Write, os::fd::AsFd};
+use std::{fs::OpenOptions, io::Write, os::fd::AsFd, sync::mpsc::Receiver};
 
 use wayland_client::{
     Connection, Dispatch, Proxy, QueueHandle,
@@ -14,13 +14,18 @@ use wayland_protocols_wlr::gamma_control::v1::client::{
 
 use crate::color::{Color, colorramp_fill};
 
+pub enum WaylandRequest {
+    ChangeOutputColor(String, Color),
+}
+
 pub struct Wayland {
     pub conn: Connection,
     pub state: WaylandState,
+    receiver: Receiver<WaylandRequest>,
 }
 
 impl Wayland {
-    pub fn new() -> Self {
+    pub fn new(receiver: Receiver<WaylandRequest>) -> Self {
         let conn = Connection::connect_to_env().unwrap();
 
         let display = conn.display();
@@ -40,7 +45,33 @@ impl Wayland {
         }
         event_queue.roundtrip(&mut state).unwrap();
 
-        Self { conn, state }
+        Self {
+            conn,
+            state,
+            receiver,
+        }
+    }
+
+    pub fn poll(&mut self) {
+        while let Ok(request) = self.receiver.recv() {
+            self.conn
+                .new_event_queue()
+                .roundtrip(&mut self.state)
+                .unwrap();
+
+            match request {
+                WaylandRequest::ChangeOutputColor(output_name, color) => {
+                    let output = self
+                        .state
+                        .outputs
+                        .iter_mut()
+                        .find(|o| o.output_name == output_name)
+                        .unwrap();
+                    output.set_color(color);
+                }
+            }
+            self.conn.flush().unwrap();
+        }
     }
 }
 
@@ -63,11 +94,10 @@ impl WaylandState {
 pub struct Output {
     global_name: u32,
     wl_output: WlOutput,
-    event_name: String,
+    output_name: String,
     gamma_control: Option<ZwlrGammaControlV1>,
     gamma_size: usize,
     color: Color,
-    color_changed: bool,
 }
 
 impl Output {
@@ -75,15 +105,14 @@ impl Output {
         Self {
             global_name,
             wl_output,
-            event_name: "".to_string(),
+            output_name: "".to_string(),
             gamma_control: None,
             gamma_size: 0,
             color: Color::default(),
-            color_changed: false,
         }
     }
 
-    pub fn set_gamma(&mut self) {
+    fn set_gamma(&mut self) {
         let path = "/dev/shm/ramp-buffer";
         let gamma_size = self.gamma_size;
         let buffer_size_u16 = 3 * gamma_size;
@@ -106,6 +135,13 @@ impl Output {
         let byte_data: Vec<u8> = buffer.iter().flat_map(|&x| x.to_ne_bytes()).collect();
         file.write_all(&byte_data).unwrap();
         self.gamma_control.as_ref().unwrap().set_gamma(file.as_fd());
+    }
+
+    fn set_color(&mut self, color: Color) {
+        if self.color != color {
+            self.color = color;
+            self.set_gamma();
+        }
     }
 }
 
@@ -151,7 +187,7 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .iter_mut()
                 .find(|o| o.wl_output == *proxy)
                 .unwrap();
-            output.event_name = name;
+            output.output_name = name;
         }
     }
 }
