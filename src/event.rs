@@ -9,9 +9,8 @@ use sunrise::{
     SolarEvent::{Sunrise, Sunset},
 };
 
-#[derive(Debug, PartialEq, Eq, Default, Clone, Copy)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ColorMode {
-    #[default]
     Light,
     Dark,
 }
@@ -66,42 +65,50 @@ pub struct ColorEvent {
 }
 
 impl ColorEvent {
-    pub fn new(lat: f64, lon: f64) -> Self {
+    pub fn new_auto(lat: f64, lon: f64) -> Self {
         let state = ColorEventState::new(lat, lon);
-        let day_time_provider = Box::new(AutoTimeProvider::new(&state));
-        let night_time_provider = Box::new(AutoTimeProvider::new(&state));
+        let day_time_provider: Box<dyn TimeProvider> = Box::new(AutoTimeProvider::new(&state));
+        let night_time_provider: Box<dyn TimeProvider> = Box::new(AutoTimeProvider::new(&state));
 
-        let mut _self = Self {
-            mode: ColorMode::default(),
-            wait_sec: 0,
+        let (mode, wait_sec) = calculate_next(&*day_time_provider, &*night_time_provider);
+        Self {
+            mode,
+            wait_sec,
             day_time_provider,
             night_time_provider,
-        };
-
-        _self.next_event();
-        _self
-    }
-
-    pub fn next_event(&mut self) {
-        let date = Local::now().date_naive();
-        let now = Utc::now();
-
-        let day_time = self.day_time_provider.day(date);
-        let night_time = self.night_time_provider.night(date);
-
-        let until: DateTime<chrono::Utc>;
-        if now < day_time {
-            self.mode = ColorMode::Dark;
-            until = day_time;
-        } else if now < night_time {
-            self.mode = ColorMode::Light;
-            until = night_time;
-        } else {
-            self.mode = ColorMode::Dark;
-            until = self.day_time_provider.day(date.succ_opt().unwrap())
         }
-        self.wait_sec = (until - now).num_seconds()
     }
+
+    pub fn next(&mut self) {
+        let (mode, wait_sec) = calculate_next(&*self.day_time_provider, &*self.night_time_provider);
+        self.mode = mode;
+        self.wait_sec = wait_sec;
+    }
+}
+
+fn calculate_next(
+    day_time_provider: &dyn TimeProvider,
+    night_time_provider: &dyn TimeProvider,
+) -> (ColorMode, i64) {
+    let date = Local::now().date_naive();
+    let now = Utc::now();
+
+    let day_time = day_time_provider.day(date);
+    let night_time = night_time_provider.night(date);
+
+    let mode: ColorMode;
+    let until: DateTime<chrono::Utc>;
+    if now < day_time {
+        mode = ColorMode::Dark;
+        until = day_time;
+    } else if now < night_time {
+        mode = ColorMode::Light;
+        until = night_time;
+    } else {
+        mode = ColorMode::Dark;
+        until = day_time_provider.day(date.succ_opt().unwrap())
+    }
+    (mode, (until - now).num_seconds())
 }
 
 #[cfg(test)]
@@ -158,14 +165,14 @@ mod test {
         #[test]
         fn morning() {
             set_time(0, 0, OFFSET);
-            let mut event = ColorEvent::new(LAT, LON);
+            let mut event = ColorEvent::new_auto(LAT, LON);
             let ColorEvent { mode, wait_sec, .. } = event;
             assert!(wait_sec < 7 * HOUR as i64);
             assert!(wait_sec > 6 * HOUR as i64);
             assert_eq!(mode, ColorMode::Dark);
 
             mock_chrono::set(forward_time(event.wait_sec, &OFFSET));
-            event.next_event();
+            event.next();
             assert_eq!(event.mode, ColorMode::Light);
             assert_eq!(forward_time(event.wait_sec, &OFFSET).hour(), 18);
         }
@@ -173,14 +180,14 @@ mod test {
         #[test]
         fn noon() {
             set_time(13, 0, OFFSET);
-            let mut event = ColorEvent::new(LAT, LON);
+            let mut event = ColorEvent::new_auto(LAT, LON);
             let ColorEvent { mode, wait_sec, .. } = event;
             assert!(wait_sec < 6 * HOUR as i64);
             assert!(wait_sec > 5 * HOUR as i64);
             assert_eq!(mode, ColorMode::Light);
 
             mock_chrono::set(forward_time(event.wait_sec, &OFFSET));
-            event.next_event();
+            event.next();
             assert_eq!(event.mode, ColorMode::Dark);
             assert_eq!(forward_time(event.wait_sec, &OFFSET).hour(), 6);
         }
@@ -188,14 +195,14 @@ mod test {
         #[test]
         fn night() {
             set_time(23, 0, OFFSET);
-            let mut event = ColorEvent::new(LAT, LON);
+            let mut event = ColorEvent::new_auto(LAT, LON);
             let ColorEvent { mode, wait_sec, .. } = event;
             assert!(wait_sec < 8 * HOUR as i64);
             assert!(wait_sec > 7 * HOUR as i64);
             assert_eq!(mode, ColorMode::Dark);
 
             mock_chrono::set(forward_time(event.wait_sec, &OFFSET));
-            event.next_event();
+            event.next();
             assert_eq!(event.mode, ColorMode::Light);
             assert_eq!(forward_time(event.wait_sec, &OFFSET).hour(), 18);
         }
