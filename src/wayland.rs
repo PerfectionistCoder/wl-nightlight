@@ -61,13 +61,19 @@ impl Wayland {
 
             match request {
                 WaylandRequest::ChangeOutputColor(output_name, color) => {
-                    let output = self
-                        .state
-                        .outputs
-                        .iter_mut()
-                        .find(|o| o.output_name == output_name)
-                        .unwrap();
-                    output.set_color(color);
+                    if &output_name == "all" {
+                        for output in self.state.outputs.iter_mut() {
+                            output.set_color(color);
+                        }
+                    } else {
+                        let output = self
+                            .state
+                            .outputs
+                            .iter_mut()
+                            .find(|o| o.output_name == output_name)
+                            .unwrap();
+                        output.set_color(color);
+                    }
                 }
             }
             self.conn.flush().unwrap();
