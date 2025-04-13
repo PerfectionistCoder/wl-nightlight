@@ -1,3 +1,5 @@
+use core::panic;
+
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(not(test))]
 use chrono::{Local, Utc};
@@ -9,7 +11,7 @@ use sunrise::{
     SolarEvent::{Sunrise, Sunset},
 };
 
-use crate::config::{LightDarkTime, Location};
+use crate::config::{ConfigTimeMode, LightDarkTime, Location};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ColorMode {
@@ -17,7 +19,7 @@ pub enum ColorMode {
     Dark,
 }
 
-#[derive(Default)]
+#[derive(Default, Debug)]
 struct ColorEventState {
     coord: Option<Coordinates>,
     light_time: Option<NaiveTime>,
@@ -63,8 +65,8 @@ impl TimeProvider for AutoTimeProvider {
 
 #[derive(Debug)]
 struct FixedTimeProvider {
-    light_time: NaiveTime,
-    dark_time: NaiveTime,
+    light_time: Option<NaiveTime>,
+    dark_time: Option<NaiveTime>,
 }
 
 impl TimeProvider for FixedTimeProvider {
@@ -78,18 +80,18 @@ impl TimeProvider for FixedTimeProvider {
             ..
         } = *state;
         Self {
-            light_time: light_time.unwrap(),
-            dark_time: dark_time.unwrap(),
+            light_time,
+            dark_time,
         }
     }
     fn light_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.light_time)
+        NaiveDateTime::new(date, self.light_time.unwrap())
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
     }
     fn dark_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.dark_time)
+        NaiveDateTime::new(date, self.dark_time.unwrap())
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
@@ -112,18 +114,22 @@ impl ColorEvent {
             state.set_coord(location.lat, location.lon);
         }
 
-        state.light_time = light_dark_time.light_time;
-        state.dark_time = light_dark_time.dark_time;
-
-        let dark_time_provider: Box<dyn TimeProvider> = if light_dark_time.light_time.is_some() {
-            Box::new(FixedTimeProvider::new(&state))
-        } else {
-            Box::new(AutoTimeProvider::new(&state))
+        state.light_time = match light_dark_time.light_time {
+            ConfigTimeMode::Fixed(time) => Some(time),
+            _ => None,
         };
-        let light_time_provider: Box<dyn TimeProvider> = if light_dark_time.dark_time.is_some() {
-            Box::new(FixedTimeProvider::new(&state))
-        } else {
-            Box::new(AutoTimeProvider::new(&state))
+        state.dark_time = match light_dark_time.dark_time {
+            ConfigTimeMode::Fixed(time) => Some(time),
+            _ => None,
+        };
+
+        let light_time_provider: Box<dyn TimeProvider> = match light_dark_time.light_time {
+            ConfigTimeMode::Auto => Box::new(AutoTimeProvider::new(&state)),
+            ConfigTimeMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)),
+        };
+        let dark_time_provider: Box<dyn TimeProvider> = match light_dark_time.dark_time {
+            ConfigTimeMode::Auto => Box::new(AutoTimeProvider::new(&state)),
+            ConfigTimeMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)),
         };
 
         let (mode, wait_sec) = calculate_next(&*light_time_provider, &*dark_time_provider);
@@ -152,6 +158,10 @@ fn calculate_next(
 
     let light_time = light_time_provider.light_time(date);
     let dark_time = dark_time_provider.dark_time(date);
+
+    if light_time > dark_time {
+        panic!();
+    }
 
     let mode: ColorMode;
     let until: DateTime<chrono::Utc>;
@@ -225,8 +235,8 @@ mod test {
             });
 
             const LIGHT_DARK_TIME: LightDarkTime = LightDarkTime {
-                light_time: None,
-                dark_time: None,
+                light_time: ConfigTimeMode::Auto,
+                dark_time: ConfigTimeMode::Auto,
             };
 
             #[test]
@@ -291,8 +301,8 @@ mod test {
             const LOCATION: Option<Location> = None;
 
             const LIGHT_DARK_TIME: LightDarkTime = LightDarkTime {
-                light_time: NaiveTime::from_hms_opt(8, 0, 0),
-                dark_time: NaiveTime::from_hms_opt(19, 0, 0),
+                light_time: ConfigTimeMode::Fixed(NaiveTime::from_hms_opt(8, 0, 0).unwrap()),
+                dark_time: ConfigTimeMode::Fixed(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
             };
 
             #[test]
