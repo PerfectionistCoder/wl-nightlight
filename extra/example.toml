@@ -1,0 +1,15 @@
+[light]
+temperature = 6500
+gamma = 1.0
+brightness = 1.0
+inverted = false
+
+[dark]
+temperature = 5500
+gamma = 1.0
+brightness = 0.8
+inverted = false
+
+[location]
+lat = 51.0
+lon = -0.1

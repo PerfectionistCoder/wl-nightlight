@@ -1,7 +1,8 @@
-/// Color parameters
-#[derive(Debug, Clone, Copy, PartialEq)]
+use serde::Deserialize;
+
+#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
 pub struct Color {
-    pub temp: u16,
+    pub temperature: u16,
     pub gamma: f64,
     pub brightness: f64,
     pub inverted: bool,
@@ -10,23 +11,11 @@ pub struct Color {
 impl Default for Color {
     fn default() -> Self {
         Self {
-            temp: 6500,
+            temperature: 6500,
             gamma: 1.0,
             brightness: 1.0,
             inverted: false,
         }
-    }
-}
-
-impl Color {
-    /// Returns a color with update temperature, clamping it to [1K, 10K] range, or none if
-    /// temperature could not be updated.
-    pub fn with_updated_temp(self, delta: i16) -> Option<Self> {
-        let new_temp = self.temp.saturating_add_signed(delta).clamp(1_000, 10_000);
-        (new_temp != self.temp).then_some(Self {
-            temp: new_temp,
-            ..self
-        })
     }
 }
 
@@ -42,9 +31,9 @@ fn map_intensity(v: f64, white: f64, color: Color, v_max_gamma: f64) -> u16 {
 }
 
 pub fn colorramp_fill(r: &mut [u16], g: &mut [u16], b: &mut [u16], ramp_size: usize, color: Color) {
-    let color_i = ((color.temp as usize - 1000) / 100) * 3;
+    let color_i = ((color.temperature as usize - 1000) / 100) * 3;
     let [white_r, white_g, white_b] = interpolate_color(
-        (color.temp % 100) as f64 / 100.0,
+        (color.temperature % 100) as f64 / 100.0,
         &BLACKBODY_COLOR[color_i..],
         &BLACKBODY_COLOR[(color_i + 3)..],
     );
