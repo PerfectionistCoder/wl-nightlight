@@ -1,12 +1,12 @@
 mod color;
 mod config;
-mod event;
+mod switch_mode;
 mod wayland;
 
 use std::{sync::mpsc::channel, thread, time::Duration};
 
 use config::RawConfig;
-use event::{ColorEvent, ColorMode};
+use switch_mode::{DisplayMode, DisplayModeState};
 use wayland::{Wayland, WaylandRequest};
 
 fn main() {
@@ -16,30 +16,30 @@ fn main() {
     let (sender, receiver) = channel();
     let mut wayland = Wayland::new(receiver);
     thread::spawn(move || {
-        wayland.poll();
+        wayland.process_requests();
     });
 
-    let mut event = ColorEvent::new(config.light_dark_time, config.location);
+    let mut event = DisplayModeState::new(config.switch_mode, config.location);
     loop {
         match event.mode {
-            ColorMode::Light => {
+            DisplayMode::Day => {
                 sender
                     .send(WaylandRequest::ChangeOutputColor(
                         "all".to_string(),
-                        config.light,
+                        config.day,
                     ))
                     .unwrap();
             }
-            ColorMode::Dark => {
+            DisplayMode::Night => {
                 sender
                     .send(WaylandRequest::ChangeOutputColor(
                         "all".to_string(),
-                        config.dark,
+                        config.night,
                     ))
                     .unwrap();
             }
         };
-        thread::sleep(Duration::from_secs(event.wait_sec as u64));
+        thread::sleep(Duration::from_secs(event.delay_in_seconds as u64));
         event.next();
     }
 }

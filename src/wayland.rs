@@ -12,25 +12,25 @@ use wayland_protocols_wlr::gamma_control::v1::client::{
     zwlr_gamma_control_v1::{self, ZwlrGammaControlV1},
 };
 
-use crate::color::{Color, colorramp_fill};
+use crate::color::{DisplayColor, fill_color_ramp};
 
 pub enum WaylandRequest {
-    ChangeOutputColor(String, Color),
+    ChangeOutputColor(String, DisplayColor),
 }
 
 pub struct Wayland {
-    pub conn: Connection,
+    pub connection: Connection,
     pub state: WaylandState,
     receiver: Receiver<WaylandRequest>,
 }
 
 impl Wayland {
     pub fn new(receiver: Receiver<WaylandRequest>) -> Self {
-        let conn = Connection::connect_to_env().unwrap();
+        let connection = Connection::connect_to_env().unwrap();
 
-        let display = conn.display();
+        let display = connection.display();
 
-        let mut event_queue = conn.new_event_queue();
+        let mut event_queue = connection.new_event_queue();
         let qh = event_queue.handle();
 
         let mut state = WaylandState::new();
@@ -46,15 +46,15 @@ impl Wayland {
         event_queue.roundtrip(&mut state).unwrap();
 
         Self {
-            conn,
+            connection,
             state,
             receiver,
         }
     }
 
-    pub fn poll(&mut self) {
+    pub fn process_requests(&mut self) {
         while let Ok(request) = self.receiver.recv() {
-            self.conn
+            self.connection
                 .new_event_queue()
                 .roundtrip(&mut self.state)
                 .unwrap();
@@ -76,14 +76,14 @@ impl Wayland {
                     }
                 }
             }
-            self.conn.flush().unwrap();
+            self.connection.flush().unwrap();
         }
     }
 }
 
 #[derive(Debug)]
 pub struct WaylandState {
-    pub outputs: Vec<Output>,
+    pub outputs: Vec<DisplayOutput>,
     gamma_manager: Option<ZwlrGammaControlManagerV1>,
 }
 
@@ -97,16 +97,16 @@ impl WaylandState {
 }
 
 #[derive(Debug)]
-pub struct Output {
+pub struct DisplayOutput {
     global_name: u32,
     wl_output: WlOutput,
     output_name: String,
     gamma_control: Option<ZwlrGammaControlV1>,
     gamma_size: usize,
-    color: Color,
+    color: DisplayColor,
 }
 
-impl Output {
+impl DisplayOutput {
     fn new(global_name: u32, wl_output: WlOutput) -> Self {
         Self {
             global_name,
@@ -114,11 +114,11 @@ impl Output {
             output_name: "".to_string(),
             gamma_control: None,
             gamma_size: 0,
-            color: Color::default(),
+            color: DisplayColor::default(),
         }
     }
 
-    fn set_gamma(&mut self) {
+    fn update_gamma(&mut self) {
         let path = "/dev/shm/ramp-buffer";
         let gamma_size = self.gamma_size;
         let buffer_size_u16 = 3 * gamma_size;
@@ -136,17 +136,17 @@ impl Output {
         let mut buffer = vec![0u16; buffer_size_u16];
         let (r, rest) = buffer.split_at_mut(gamma_size);
         let (g, b) = rest.split_at_mut(gamma_size);
-        colorramp_fill(r, g, b, gamma_size, self.color);
+        fill_color_ramp(r, g, b, gamma_size, self.color);
 
         let byte_data: Vec<u8> = buffer.iter().flat_map(|&x| x.to_ne_bytes()).collect();
         file.write_all(&byte_data).unwrap();
         self.gamma_control.as_ref().unwrap().set_gamma(file.as_fd());
     }
 
-    fn set_color(&mut self, color: Color) {
+    fn set_color(&mut self, color: DisplayColor) {
         if self.color != color {
             self.color = color;
-            self.set_gamma();
+            self.update_gamma();
         }
     }
 }
@@ -168,7 +168,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
         {
             if interface == WlOutput::interface().name {
                 let wl_output = registry.bind::<WlOutput, _, _>(name, version, qh, ());
-                state.outputs.push(Output::new(name, wl_output));
+                state.outputs.push(DisplayOutput::new(name, wl_output));
                 conn.new_event_queue().roundtrip(state).unwrap();
             } else if interface == ZwlrGammaControlManagerV1::interface().name {
                 state.gamma_manager =

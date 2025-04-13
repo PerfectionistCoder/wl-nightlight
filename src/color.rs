@@ -1,14 +1,12 @@
-use serde::Deserialize;
-
-#[derive(Debug, Clone, Copy, PartialEq, Deserialize)]
-pub struct Color {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DisplayColor {
     pub temperature: u16,
     pub gamma: f64,
     pub brightness: f64,
     pub inverted: bool,
 }
 
-impl Default for Color {
+impl Default for DisplayColor {
     fn default() -> Self {
         Self {
             temperature: 6500,
@@ -19,7 +17,7 @@ impl Default for Color {
     }
 }
 
-fn map_intensity(v: f64, white: f64, color: Color, v_max_gamma: f64) -> u16 {
+fn map_intensity(v: f64, white: f64, color: DisplayColor, v_max_gamma: f64) -> u16 {
     // A gamma ramp is computed as f(x) = x^γ, for x ∈ [0,1].
     // Multiple gamma adjustments can reasonably be combined as
     // f(x) = x^(γ₁γ₂) = (x^γ₁)^γ₂.
@@ -30,7 +28,13 @@ fn map_intensity(v: f64, white: f64, color: Color, v_max_gamma: f64) -> u16 {
     ((v * white).powf(color.gamma) * v_max_gamma) as u16
 }
 
-pub fn colorramp_fill(r: &mut [u16], g: &mut [u16], b: &mut [u16], ramp_size: usize, color: Color) {
+pub fn fill_color_ramp(
+    r: &mut [u16],
+    g: &mut [u16],
+    b: &mut [u16],
+    ramp_size: usize,
+    color: DisplayColor,
+) {
     let color_i = ((color.temperature as usize - 1000) / 100) * 3;
     let [white_r, white_g, white_b] = interpolate_color(
         (color.temperature % 100) as f64 / 100.0,

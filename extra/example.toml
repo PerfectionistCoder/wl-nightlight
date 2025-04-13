@@ -1,10 +1,10 @@
-[dark]
+[night]
 temperature = 5500
 
 [location]
-lat = 51.0
-lon = -0.1
+latitude = 51.0
+longitude = -0.1
 
-[general]
-on = "auto"
-off = "auto"
+[switch-mode]
+day = "auto"
+night = "auto"

@@ -11,33 +11,33 @@ use sunrise::{
     SolarEvent::{Sunrise, Sunset},
 };
 
-use crate::config::{ConfigTimeMode, LightDarkTime, Location};
+use crate::config::{LocationConfig, SwitchMode, TimeProviderMode};
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum ColorMode {
-    Light,
-    Dark,
+pub enum DisplayMode {
+    Day,
+    Night,
 }
 
 #[derive(Default, Debug)]
-struct ColorEventState {
+struct TimeProviderShareState {
     coord: Option<Coordinates>,
-    light_time: Option<NaiveTime>,
-    dark_time: Option<NaiveTime>,
+    fixed_day_time: Option<NaiveTime>,
+    fixed_night_time: Option<NaiveTime>,
 }
 
-impl ColorEventState {
-    fn set_coord(&mut self, lat: f64, lon: f64) {
-        self.coord = Some(Coordinates::new(lat, lon).unwrap());
+impl TimeProviderShareState {
+    fn set_coord(&mut self, latitude: f64, longitude: f64) {
+        self.coord = Some(Coordinates::new(latitude, longitude).unwrap());
     }
 }
 
 trait TimeProvider: std::fmt::Debug {
-    fn new(state: &ColorEventState) -> Self
+    fn new(state: &TimeProviderShareState) -> Self
     where
         Self: Sized;
-    fn light_time(&self, date: NaiveDate) -> DateTime<chrono::Utc>;
-    fn dark_time(&self, date: NaiveDate) -> DateTime<chrono::Utc>;
+    fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc>;
+    fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc>;
 }
 
 #[derive(Debug)]
@@ -46,52 +46,52 @@ struct AutoTimeProvider {
 }
 
 impl TimeProvider for AutoTimeProvider {
-    fn new(state: &ColorEventState) -> Self
+    fn new(state: &TimeProviderShareState) -> Self
     where
         Self: Sized,
     {
-        let ColorEventState { coord, .. } = *state;
+        let TimeProviderShareState { coord, .. } = *state;
         Self {
             coord: coord.unwrap(),
         }
     }
-    fn light_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
+    fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
         SolarDay::new(self.coord, date).event_time(Sunrise)
     }
-    fn dark_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
+    fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
         SolarDay::new(self.coord, date).event_time(Sunset)
     }
 }
 
 #[derive(Debug)]
 struct FixedTimeProvider {
-    light_time: Option<NaiveTime>,
-    dark_time: Option<NaiveTime>,
+    day_time: Option<NaiveTime>,
+    night_time: Option<NaiveTime>,
 }
 
 impl TimeProvider for FixedTimeProvider {
-    fn new(state: &ColorEventState) -> Self
+    fn new(state: &TimeProviderShareState) -> Self
     where
         Self: Sized,
     {
-        let ColorEventState {
-            light_time,
-            dark_time,
+        let TimeProviderShareState {
+            fixed_day_time: day_time,
+            fixed_night_time: night_time,
             ..
         } = *state;
         Self {
-            light_time,
-            dark_time,
+            day_time,
+            night_time,
         }
     }
-    fn light_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.light_time.unwrap())
+    fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
+        NaiveDateTime::new(date, self.day_time.unwrap())
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
     }
-    fn dark_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.dark_time.unwrap())
+    fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
+        NaiveDateTime::new(date, self.night_time.unwrap())
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
@@ -99,81 +99,82 @@ impl TimeProvider for FixedTimeProvider {
 }
 
 #[derive(Debug)]
-pub struct ColorEvent {
-    pub mode: ColorMode,
-    pub wait_sec: i64,
-    light_time_provider: Box<dyn TimeProvider>,
-    dark_time_provider: Box<dyn TimeProvider>,
+pub struct DisplayModeState {
+    pub mode: DisplayMode,
+    pub delay_in_seconds: i64,
+    day_time_provider: Box<dyn TimeProvider>,
+    night_time_provider: Box<dyn TimeProvider>,
 }
 
-impl ColorEvent {
-    pub fn new(light_dark_time: LightDarkTime, location: Option<Location>) -> Self {
-        let mut state = ColorEventState::default();
+impl DisplayModeState {
+    pub fn new(switch_mode: SwitchMode, location: Option<LocationConfig>) -> Self {
+        let mut state = TimeProviderShareState::default();
 
         if let Some(location) = location {
-            state.set_coord(location.lat, location.lon);
+            state.set_coord(location.latitude, location.longitude);
         }
 
-        state.light_time = match light_dark_time.light_time {
-            ConfigTimeMode::Fixed(time) => Some(time),
+        state.fixed_day_time = match switch_mode.day {
+            TimeProviderMode::Fixed(time) => Some(time),
             _ => None,
         };
-        state.dark_time = match light_dark_time.dark_time {
-            ConfigTimeMode::Fixed(time) => Some(time),
+        state.fixed_night_time = match switch_mode.night {
+            TimeProviderMode::Fixed(time) => Some(time),
             _ => None,
         };
 
-        let light_time_provider: Box<dyn TimeProvider> = match light_dark_time.light_time {
-            ConfigTimeMode::Auto => Box::new(AutoTimeProvider::new(&state)),
-            ConfigTimeMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)),
+        let light_time_provider: Box<dyn TimeProvider> = match switch_mode.day {
+            TimeProviderMode::Auto => Box::new(AutoTimeProvider::new(&state)),
+            TimeProviderMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)),
         };
-        let dark_time_provider: Box<dyn TimeProvider> = match light_dark_time.dark_time {
-            ConfigTimeMode::Auto => Box::new(AutoTimeProvider::new(&state)),
-            ConfigTimeMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)),
+        let dark_time_provider: Box<dyn TimeProvider> = match switch_mode.night {
+            TimeProviderMode::Auto => Box::new(AutoTimeProvider::new(&state)),
+            TimeProviderMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)),
         };
 
-        let (mode, wait_sec) = calculate_next(&*light_time_provider, &*dark_time_provider);
+        let (mode, delay_in_seconds) =
+            get_next_mode_switch(&*light_time_provider, &*dark_time_provider);
         Self {
             mode,
-            wait_sec,
-            light_time_provider,
-            dark_time_provider,
+            delay_in_seconds,
+            day_time_provider: light_time_provider,
+            night_time_provider: dark_time_provider,
         }
     }
 
     pub fn next(&mut self) {
-        let (mode, wait_sec) =
-            calculate_next(&*self.light_time_provider, &*self.dark_time_provider);
+        let (mode, delay_in_seconds) =
+            get_next_mode_switch(&*self.day_time_provider, &*self.night_time_provider);
         self.mode = mode;
-        self.wait_sec = wait_sec;
+        self.delay_in_seconds = delay_in_seconds;
     }
 }
 
-fn calculate_next(
+fn get_next_mode_switch(
     light_time_provider: &dyn TimeProvider,
     dark_time_provider: &dyn TimeProvider,
-) -> (ColorMode, i64) {
+) -> (DisplayMode, i64) {
     let date = Local::now().date_naive();
     let now = Utc::now();
 
-    let light_time = light_time_provider.light_time(date);
-    let dark_time = dark_time_provider.dark_time(date);
+    let light_time = light_time_provider.get_day_time(date);
+    let dark_time = dark_time_provider.get_night_time(date);
 
     if light_time > dark_time {
         panic!();
     }
 
-    let mode: ColorMode;
+    let mode: DisplayMode;
     let until: DateTime<chrono::Utc>;
     if now < light_time {
-        mode = ColorMode::Dark;
+        mode = DisplayMode::Night;
         until = light_time;
     } else if now < dark_time {
-        mode = ColorMode::Light;
+        mode = DisplayMode::Day;
         until = dark_time;
     } else {
-        mode = ColorMode::Dark;
-        until = light_time_provider.light_time(date.succ_opt().unwrap())
+        mode = DisplayMode::Night;
+        until = light_time_provider.get_day_time(date.succ_opt().unwrap())
     }
     (mode, (until - now).num_seconds())
 }
@@ -229,30 +230,30 @@ mod test {
 
             // Nairobi
             const OFFSET: FixedOffset = FixedOffset::east_opt(3 * HOUR).unwrap();
-            const LOCATION: Option<Location> = Some(Location {
-                lat: -1.2,
-                lon: 36.8,
+            const LOCATION: Option<LocationConfig> = Some(LocationConfig {
+                latitude: -1.2,
+                longitude: 36.8,
             });
 
-            const LIGHT_DARK_TIME: LightDarkTime = LightDarkTime {
-                light_time: ConfigTimeMode::Auto,
-                dark_time: ConfigTimeMode::Auto,
+            const LIGHT_DARK_TIME: SwitchMode = SwitchMode {
+                day: TimeProviderMode::Auto,
+                night: TimeProviderMode::Auto,
             };
 
             #[test]
             fn morning() {
                 set_time(0, 0, OFFSET);
-                let mut event = ColorEvent::new(LIGHT_DARK_TIME, LOCATION);
+                let mut event = DisplayModeState::new(LIGHT_DARK_TIME, LOCATION);
 
-                let sunrise = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Dark);
+                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
 
                 mock_chrono::set(sunrise);
                 event.next();
-                let sunset = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Light);
+                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunset.minute() < 45);
             }
@@ -260,17 +261,17 @@ mod test {
             #[test]
             fn noon() {
                 set_time(13, 0, OFFSET);
-                let mut event = ColorEvent::new(LIGHT_DARK_TIME, LOCATION);
+                let mut event = DisplayModeState::new(LIGHT_DARK_TIME, LOCATION);
 
-                let sunset = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Light);
+                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunset.minute() < 45);
 
                 mock_chrono::set(sunset);
                 event.next();
-                let sunrise = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Dark);
+                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
             }
@@ -278,17 +279,17 @@ mod test {
             #[test]
             fn midnight() {
                 set_time(23, 0, OFFSET);
-                let mut event = ColorEvent::new(LIGHT_DARK_TIME, LOCATION);
+                let mut event = DisplayModeState::new(LIGHT_DARK_TIME, LOCATION);
 
-                let sunrise = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Dark);
+                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
 
                 mock_chrono::set(sunrise);
                 event.next();
-                let sunset = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Light);
+                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunset.minute() < 45);
             }
@@ -298,27 +299,27 @@ mod test {
             use super::*;
 
             const OFFSET: FixedOffset = FixedOffset::east_opt(0).unwrap();
-            const LOCATION: Option<Location> = None;
+            const LOCATION: Option<LocationConfig> = None;
 
-            const LIGHT_DARK_TIME: LightDarkTime = LightDarkTime {
-                light_time: ConfigTimeMode::Fixed(NaiveTime::from_hms_opt(8, 0, 0).unwrap()),
-                dark_time: ConfigTimeMode::Fixed(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
+            const LIGHT_DARK_TIME: SwitchMode = SwitchMode {
+                day: TimeProviderMode::Fixed(NaiveTime::from_hms_opt(8, 0, 0).unwrap()),
+                night: TimeProviderMode::Fixed(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
             };
 
             #[test]
             fn morning() {
                 set_time(0, 0, OFFSET);
-                let mut event = ColorEvent::new(LIGHT_DARK_TIME, LOCATION);
+                let mut event = DisplayModeState::new(LIGHT_DARK_TIME, LOCATION);
 
-                let sunrise = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Dark);
+                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Night);
                 assert_eq!(sunrise.hour(), 8);
                 assert_eq!(sunrise.minute(), 0);
 
                 mock_chrono::set(sunrise);
                 event.next();
-                let sunset = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Light);
+                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
             }
@@ -326,17 +327,17 @@ mod test {
             #[test]
             fn noon() {
                 set_time(13, 0, OFFSET);
-                let mut event = ColorEvent::new(LIGHT_DARK_TIME, LOCATION);
+                let mut event = DisplayModeState::new(LIGHT_DARK_TIME, LOCATION);
 
-                let sunset = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Light);
+                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
 
                 mock_chrono::set(sunset);
                 event.next();
-                let sunrise = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Dark);
+                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Night);
                 assert_eq!(sunrise.hour(), 8);
                 assert_eq!(sunrise.minute(), 0);
             }
@@ -344,17 +345,17 @@ mod test {
             #[test]
             fn midnight() {
                 set_time(23, 0, OFFSET);
-                let mut event = ColorEvent::new(LIGHT_DARK_TIME, LOCATION);
+                let mut event = DisplayModeState::new(LIGHT_DARK_TIME, LOCATION);
 
-                let sunrise = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Dark);
+                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Night);
                 assert_eq!(sunrise.hour(), 8);
                 assert_eq!(sunrise.minute(), 0);
 
                 mock_chrono::set(sunrise);
                 event.next();
-                let sunset = forward_time(event.wait_sec, &OFFSET);
-                assert_eq!(event.mode, ColorMode::Light);
+                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                assert_eq!(event.mode, DisplayMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
             }

@@ -1,10 +1,10 @@
 use chrono::NaiveTime;
 use serde::Deserialize;
 
-use crate::color::Color;
+use crate::color::DisplayColor;
 
 #[derive(Deserialize, Debug)]
-struct PartialColor {
+struct DisplayColorConfig {
     temperature: Option<u16>,
     gamma: Option<f64>,
     brightness: Option<f64>,
@@ -12,42 +12,43 @@ struct PartialColor {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct Location {
-    pub lat: f64,
-    pub lon: f64,
+pub struct LocationConfig {
+    pub latitude: f64,
+    pub longitude: f64,
 }
 
 #[derive(Deserialize, Debug)]
-pub struct General {
-    pub on: String,
-    pub off: String,
+pub struct SwitchModeConfig {
+    pub day: String,
+    pub night: String,
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "kebab-case")]
 pub struct RawConfig {
-    pub light: Option<PartialColor>,
-    pub dark: Option<PartialColor>,
-    pub location: Option<Location>,
-    pub general: General,
+    day: Option<DisplayColorConfig>,
+    night: Option<DisplayColorConfig>,
+    pub location: Option<LocationConfig>,
+    pub switch_mode: SwitchModeConfig,
 }
 
 #[derive(PartialEq, Eq, Debug)]
-pub enum ConfigTimeMode {
+pub enum TimeProviderMode {
     Auto,
     Fixed(NaiveTime),
 }
 
 #[derive(Debug)]
-pub struct LightDarkTime {
-    pub light_time: ConfigTimeMode,
-    pub dark_time: ConfigTimeMode,
+pub struct SwitchMode {
+    pub day: TimeProviderMode,
+    pub night: TimeProviderMode,
 }
 
 pub struct Config {
-    pub light: Color,
-    pub dark: Color,
-    pub location: Option<Location>,
-    pub light_dark_time: LightDarkTime,
+    pub day: DisplayColor,
+    pub night: DisplayColor,
+    pub location: Option<LocationConfig>,
+    pub switch_mode: SwitchMode,
 }
 
 impl RawConfig {
@@ -65,34 +66,34 @@ impl RawConfig {
     }
 
     pub fn parse(self) -> Config {
-        fn merge_color(color: Option<PartialColor>) -> Color {
-            let default = Color::default();
-            color.map_or(default, |c| Color {
+        fn merge_color(color: Option<DisplayColorConfig>) -> DisplayColor {
+            let default = DisplayColor::default();
+            color.map_or(default, |c| DisplayColor {
                 temperature: c.temperature.unwrap_or(default.temperature),
                 gamma: c.gamma.unwrap_or(default.gamma),
                 brightness: c.brightness.unwrap_or(default.brightness),
                 inverted: c.inverted.unwrap_or(default.inverted),
             })
         }
-        fn parse_time(str: &str) -> ConfigTimeMode {
+        fn parse_time(str: &str) -> TimeProviderMode {
             match str {
-                "auto" => ConfigTimeMode::Auto,
-                _ => ConfigTimeMode::Fixed(NaiveTime::parse_from_str(str, "%H:%M").unwrap()),
+                "auto" => TimeProviderMode::Auto,
+                _ => TimeProviderMode::Fixed(NaiveTime::parse_from_str(str, "%H:%M").unwrap()),
             }
         }
 
-        let light_time = parse_time(&self.general.off);
-        let dark_time = parse_time(&self.general.on);
+        let light_time = parse_time(&self.switch_mode.night);
+        let dark_time = parse_time(&self.switch_mode.day);
 
-        if light_time == ConfigTimeMode::Auto || dark_time == ConfigTimeMode::Auto {}
+        if light_time == TimeProviderMode::Auto || dark_time == TimeProviderMode::Auto {}
 
         Config {
-            light: merge_color(self.light),
-            dark: merge_color(self.dark),
+            day: merge_color(self.day),
+            night: merge_color(self.night),
             location: self.location,
-            light_dark_time: LightDarkTime {
-                light_time,
-                dark_time,
+            switch_mode: SwitchMode {
+                day: light_time,
+                night: dark_time,
             },
         }
     }
@@ -108,33 +109,33 @@ mod test {
         #[test]
         fn minimal() {
             let file = "
-                 [general]
-                 on = \"auto\"
-                 off = \"auto\"
+                 [switch-mode]
+                 day = \"auto\"
+                 night = \"auto\"
             ";
             let config = RawConfig::new(file).parse();
-            assert_eq!(config.light, Color::default());
-            assert_eq!(config.dark, Color::default());
+            assert_eq!(config.day, DisplayColor::default());
+            assert_eq!(config.night, DisplayColor::default());
             assert!(config.location.is_none());
-            assert_eq!(config.light_dark_time.light_time, ConfigTimeMode::Auto);
-            assert_eq!(config.light_dark_time.dark_time, ConfigTimeMode::Auto);
+            assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
+            assert_eq!(config.switch_mode.night, TimeProviderMode::Auto);
         }
 
-        mod nix_time_provider {
+        mod mix_time_provider {
             use super::*;
 
             #[test]
             fn fixed_auto() {
                 let file = "
-                     [general]
-                     on = \"19:30\"
-                     off = \"auto\"
+                     [switch-mode]
+                     day = \"19:30\"
+                     night = \"auto\"
                 ";
                 let config = RawConfig::new(file).parse();
-                assert_eq!(config.light_dark_time.light_time, ConfigTimeMode::Auto);
+                assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
                 assert_eq!(
-                    config.light_dark_time.dark_time,
-                    ConfigTimeMode::Fixed(NaiveTime::from_hms_opt(19, 30, 0).unwrap())
+                    config.switch_mode.night,
+                    TimeProviderMode::Fixed(NaiveTime::from_hms_opt(19, 30, 0).unwrap())
                 );
             }
         }
