@@ -4,12 +4,16 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+anyhow = "1.0.98"
 bytemuck = "1.22.0"
 chrono = { version = "0.4.40", default-features = false, features = ["clock"] }
+log = "0.4.27"
 memmap2 = "0.9.5"
 serde = { version = "1.0.219", features = ["derive"] }
 shmemfdrs2 = "1.0.0"
+simple_logger = { version = "5.0.0", features = ["stderr"] }
 sunrise = "1.2.1"
+time = "0.3.41"
 toml = { version = "0.8.20", default-features = false, features = ["parse"] }
 wayland-client = "0.31.8"
 wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }

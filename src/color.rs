@@ -1,12 +1,14 @@
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct DisplayColor {
+use struct_patch::Filler;
+
+#[derive(Debug, Clone, Copy, PartialEq, Filler)]
+pub struct OutputColor {
     pub temperature: u16,
     pub gamma: f64,
     pub brightness: f64,
     pub inverted: bool,
 }
 
-impl Default for DisplayColor {
+impl Default for OutputColor {
     fn default() -> Self {
         Self {
             temperature: 6500,
@@ -17,14 +19,7 @@ impl Default for DisplayColor {
     }
 }
 
-fn map_intensity(v: f64, white: f64, color: DisplayColor, v_max_gamma: f64) -> u16 {
-    // A gamma ramp is computed as f(x) = x^γ, for x ∈ [0,1].
-    // Multiple gamma adjustments can reasonably be combined as
-    // f(x) = x^(γ₁γ₂) = (x^γ₁)^γ₂.
-    // Here, x^γ₁ ≡ (v * white) is the color-temperature-adjusted intensity,
-    // and γ₂ is the overall gamma correction.
-    // The factor v_max_gamma adjusts for the fact that generally v ∉ [0,1]:
-    // (v/v_max)^γ * v_max = v^γ * v_max^(1-γ)
+fn map_intensity(v: f64, white: f64, color: OutputColor, v_max_gamma: f64) -> u16 {
     ((v * white).powf(color.gamma) * v_max_gamma) as u16
 }
 
@@ -33,7 +28,7 @@ pub fn fill_color_ramp(
     g: &mut [u16],
     b: &mut [u16],
     ramp_size: usize,
-    color: DisplayColor,
+    color: OutputColor,
 ) {
     let color_i = ((color.temperature as usize - 1000) / 100) * 3;
     let [white_r, white_g, white_b] = interpolate_color(
@@ -62,10 +57,6 @@ fn interpolate_color(a: f64, c1: &[f64], c2: &[f64]) -> [f64; 3] {
     ]
 }
 
-/// [Black body radiation color](https://en.wikipedia.org/wiki/Black-body_radiation) mapped by
-/// temperature in the range [1_000,10_100].
-///
-/// Refer to <https://gitlab.com/chinstrap/gammastep/-/blob/master/README-colorramp> for more info.
 const BLACKBODY_COLOR: &[f64] = &[
     1.00000000, 0.18172716, 0.00000000, 1.00000000, 0.25503671, 0.00000000, 1.00000000, 0.30942099,
     0.00000000, 1.00000000, 0.35357379, 0.00000000, 1.00000000, 0.39091524, 0.00000000, 1.00000000,

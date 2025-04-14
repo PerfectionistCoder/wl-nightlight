@@ -12,7 +12,7 @@ struct DisplayColorConfig {
 }
 
 #[derive(Deserialize, Debug)]
-pub struct LocationConfig {
+pub struct Location {
     pub latitude: f64,
     pub longitude: f64,
 }
@@ -28,7 +28,7 @@ pub struct SwitchModeConfig {
 pub struct RawConfig {
     day: Option<DisplayColorConfig>,
     night: Option<DisplayColorConfig>,
-    pub location: Option<LocationConfig>,
+    pub location: Option<Location>,
     pub switch_mode: SwitchModeConfig,
 }
 
@@ -47,7 +47,7 @@ pub struct SwitchMode {
 pub struct Config {
     pub day: DisplayColor,
     pub night: DisplayColor,
-    pub location: Option<LocationConfig>,
+    pub location: Option<Location>,
     pub switch_mode: SwitchMode,
 }
 
