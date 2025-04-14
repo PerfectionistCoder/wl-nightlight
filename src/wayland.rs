@@ -1,4 +1,4 @@
-use std::{fs::OpenOptions, io::Write, os::fd::AsFd, sync::mpsc::Receiver};
+use std::{os::fd::AsFd, sync::mpsc::Receiver};
 
 use wayland_client::{
     Connection, Dispatch, Proxy, QueueHandle,
@@ -119,27 +119,13 @@ impl DisplayOutput {
     }
 
     fn update_gamma(&mut self) {
-        let path = "/dev/shm/ramp-buffer";
-        let gamma_size = self.gamma_size;
-        let buffer_size_u16 = 3 * gamma_size;
-        let buffer_size_bytes = buffer_size_u16 * std::mem::size_of::<u16>();
-
-        let mut file = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .open(path)
-            .unwrap();
-        file.set_len(buffer_size_bytes as u64).unwrap();
-
-        let mut buffer = vec![0u16; buffer_size_u16];
-        let (r, rest) = buffer.split_at_mut(gamma_size);
-        let (g, b) = rest.split_at_mut(gamma_size);
-        fill_color_ramp(r, g, b, gamma_size, self.color);
-
-        let byte_data: Vec<u8> = buffer.iter().flat_map(|&x| x.to_ne_bytes()).collect();
-        file.write_all(&byte_data).unwrap();
+        let file = shmemfdrs2::create_shmem(c"/ramp-buffer").unwrap();
+        file.set_len(self.gamma_size as u64 * 6).unwrap();
+        let mut mmap = unsafe { memmap2::MmapMut::map_mut(&file).unwrap() };
+        let buf = bytemuck::cast_slice_mut::<u8, u16>(&mut mmap);
+        let (r, rest) = buf.split_at_mut(self.gamma_size);
+        let (g, b) = rest.split_at_mut(self.gamma_size);
+        fill_color_ramp(r, g, b, self.gamma_size, self.color);
         self.gamma_control.as_ref().unwrap().set_gamma(file.as_fd());
     }
 

@@ -4,7 +4,12 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+bytemuck = "1.22.0"
 chrono = { version = "0.4.40", default-features = false, features = ["clock"] }
+memmap2 = "0.9.5"
+serde = { version = "1.0.219", features = ["derive"] }
+shmemfdrs2 = "1.0.0"
 sunrise = "1.2.1"
+toml = { version = "0.8.20", default-features = false, features = ["parse"] }
 wayland-client = "0.31.8"
 wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }
