@@ -75,7 +75,7 @@ impl Display for ConfigError {
         ) -> fmt::Result {
             for (field, error_kind) in &errors.0 {
                 let field_path = if path_prefix.is_empty() {
-                    String::from_str("[").unwrap() + field
+                    String::from("[") + field
                 } else {
                     format!("{}.{}", path_prefix, field)
                 };
@@ -86,8 +86,7 @@ impl Display for ConfigError {
                             let detail = match error.code.deref() {
                                 "range" => format!(
                                     "is not in range [{}, {}]",
-                                    error.params.get("min").unwrap(),
-                                    error.params.get("max").unwrap()
+                                    error.params["min"], error.params["max"]
                                 ),
                                 "time" => "is not in format `HH:MM`".to_string(),
                                 _ => panic!(),
@@ -143,8 +142,10 @@ impl RawConfig {
         }
 
         fn parse_time_mode(time: &str) -> TimeProviderMode {
-            // validation done before parsing
-            TimeProviderMode::Fixed(NaiveTime::parse_from_str(time, "%H:%M").unwrap())
+            TimeProviderMode::Fixed(
+                NaiveTime::parse_from_str(time, "%H:%M")
+                    .expect("naive time parse from string failed"),
+            )
         }
 
         let day_color = fill_color(self.day);

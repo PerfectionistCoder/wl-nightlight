@@ -38,7 +38,7 @@ struct TimeProviderState {
 
 impl TimeProviderState {
     fn set_coord(&mut self, latitude: f64, longitude: f64) {
-        self.coord = Some(Coordinates::new(latitude, longitude).unwrap());
+        self.coord = Some(Coordinates::new(latitude, longitude).expect("coordinates out of range"));
     }
 }
 
@@ -62,7 +62,7 @@ impl TimeProvider for AutoTimeProvider {
     {
         let TimeProviderState { coord, .. } = *state;
         Self {
-            coord: coord.unwrap(),
+            coord: coord.expect("coordinates not set"),
         }
     }
     fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
@@ -75,8 +75,8 @@ impl TimeProvider for AutoTimeProvider {
 
 #[derive(Debug)]
 struct FixedTimeProvider {
-    day_time: Option<NaiveTime>,
-    night_time: Option<NaiveTime>,
+    day_time: NaiveTime,
+    night_time: NaiveTime,
 }
 
 impl TimeProvider for FixedTimeProvider {
@@ -85,23 +85,23 @@ impl TimeProvider for FixedTimeProvider {
         Self: Sized,
     {
         let TimeProviderState {
-            fixed_day_time: day_time,
-            fixed_night_time: night_time,
+            fixed_day_time,
+            fixed_night_time,
             ..
         } = *state;
         Self {
-            day_time,
-            night_time,
+            day_time: fixed_day_time.expect("fixed day time not set"),
+            night_time: fixed_night_time.expect("fixed night time not set"),
         }
     }
     fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.day_time.unwrap())
+        NaiveDateTime::new(date, self.day_time)
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
     }
     fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.night_time.unwrap())
+        NaiveDateTime::new(date, self.night_time)
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()

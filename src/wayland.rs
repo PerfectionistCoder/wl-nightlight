@@ -85,7 +85,7 @@ impl Wayland {
                                 .state
                                 .outputs
                                 .iter_mut()
-                                .find(|o| o.output_name.as_ref().unwrap() == &name);
+                                .find(|o| o.output_name.as_ref().is_some_and(|n| n == &name));
                             match output {
                                 Some(output) => output.set_color(color)?,
                                 None => {
@@ -103,9 +103,9 @@ impl Wayland {
             Ok(())
         })();
 
-        if let Err(error) = result {
-            if self.sender.send(Err(error)).is_err() {};
-        }
+        self.sender
+            .send(result)
+            .expect("main thread receiver dropped unexpectedly");
     }
 }
 
@@ -154,6 +154,10 @@ impl DisplayOutput {
         }
     }
 
+    fn get_gamma_control(&self) -> &ZwlrGammaControlV1 {
+        self.gamma_control.as_ref().expect("")
+    }
+
     fn destroy(&self) {
         log::info!("output `{}` destroyed", self.get_label());
         if let Some(gamma_control) = &self.gamma_control {
@@ -174,11 +178,7 @@ impl DisplayOutput {
         let (r, rest) = buf.split_at_mut(self.gamma_size);
         let (g, b) = rest.split_at_mut(self.gamma_size);
         fill_color_ramp(r, g, b, self.gamma_size, self.color);
-        self.gamma_control
-            .as_ref()
-            // all output should be assigned a gamma_control
-            .unwrap()
-            .set_gamma(file.as_fd());
+        self.get_gamma_control().set_gamma(file.as_fd());
 
         Ok(())
     }
@@ -246,8 +246,7 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .outputs
                 .iter_mut()
                 .find(|o| o.wl_output == *proxy)
-                // should be able to find the same wl_output right after binding
-                .unwrap();
+                .expect("received event for unknown output");
             output.output_name = Some(name);
             log::info!("new output: `{}`", output.get_label());
         }
@@ -278,17 +277,18 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
         let index = state
             .outputs
             .iter()
-            .position(|o| o.gamma_control.as_ref().unwrap() == proxy)
-            .unwrap();
+            .position(|o| o.get_gamma_control() == proxy)
+            .expect("received event for unknown input");
         match event {
             zwlr_gamma_control_v1::Event::GammaSize { size } => {
                 let output = &mut state.outputs[index];
                 output.gamma_size = size as usize;
-                log::info!("output `{0}` gamma size: {size}", output.get_label());
+                log::debug!("output `{0}` gamma size: {size}", output.get_label());
             }
             zwlr_gamma_control_v1::Event::Failed => {
                 let output = state.outputs.swap_remove(index);
                 output.destroy();
+                log::error!("output `{}` event failed", output.get_label());
             }
             _ => (),
         }
