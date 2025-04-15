@@ -74,8 +74,7 @@ impl Wayland {
                     .roundtrip(&mut self.state)?;
 
                 match request {
-                    WaylandRequest::ChangeOutputColor(output_name, color) => match &output_name[..]
-                    {
+                    WaylandRequest::ChangeOutputColor(name, color) => match &name[..] {
                         "all" => {
                             for output in self.state.outputs.iter_mut() {
                                 output.set_color(color)?;
@@ -86,11 +85,11 @@ impl Wayland {
                                 .state
                                 .outputs
                                 .iter_mut()
-                                .find(|o| o.output_name == output_name);
+                                .find(|o| o.output_name.as_ref().unwrap() == &name);
                             match output {
                                 Some(output) => output.set_color(color)?,
                                 None => {
-                                    log::warn!("no output `{output_name}` found");
+                                    log::warn!("no output `{}` found", name);
                                 }
                             }
                         }
@@ -129,7 +128,7 @@ impl WaylandState {
 struct DisplayOutput {
     registry_name: u32,
     wl_output: WlOutput,
-    output_name: String,
+    output_name: Option<String>,
     gamma_control: Option<ZwlrGammaControlV1>,
     gamma_size: usize,
     color: Color,
@@ -140,11 +139,27 @@ impl DisplayOutput {
         Self {
             registry_name,
             wl_output,
-            output_name: "".to_string(),
+            output_name: None,
             gamma_control: None,
             gamma_size: 0,
             color: Color::default(),
         }
+    }
+
+    fn get_label(&self) -> String {
+        if let Some(output_name) = &self.output_name {
+            String::from(output_name)
+        } else {
+            self.registry_name.to_string()
+        }
+    }
+
+    fn destroy(&self) {
+        log::info!("output `{}` destroyed", self.get_label());
+        if let Some(gamma_control) = &self.gamma_control {
+            gamma_control.destroy();
+        };
+        self.wl_output.release();
     }
 
     fn update_gamma(&mut self) -> anyhow::Result<()> {
@@ -187,20 +202,32 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
         _conn: &Connection,
         qh: &QueueHandle<WaylandState>,
     ) {
-        if let wl_registry::Event::Global {
-            name,
-            interface,
-            version,
-        } = event
-        {
-            log::debug!("global: [{name}] {interface} v{version}");
-            if interface == WlOutput::interface().name {
-                let wl_output = registry.bind::<WlOutput, _, _>(name, version, qh, ());
-                state.outputs.push(DisplayOutput::new(name, wl_output));
-            } else if interface == ZwlrGammaControlManagerV1::interface().name {
-                state.gamma_manager =
-                    Some(registry.bind::<ZwlrGammaControlManagerV1, _, _>(name, version, qh, ()));
+        match event {
+            wl_registry::Event::Global {
+                name,
+                interface,
+                version,
+            } => {
+                log::debug!("global: [{name}] {interface} v{version}");
+                if interface == WlOutput::interface().name {
+                    let wl_output = registry.bind::<WlOutput, _, _>(name, version, qh, ());
+                    state.outputs.push(DisplayOutput::new(name, wl_output));
+                } else if interface == ZwlrGammaControlManagerV1::interface().name {
+                    state.gamma_manager = Some(registry.bind::<ZwlrGammaControlManagerV1, _, _>(
+                        name,
+                        version,
+                        qh,
+                        (),
+                    ));
+                }
             }
+            wl_registry::Event::GlobalRemove { name } => {
+                if let Some(index) = state.outputs.iter().position(|o| o.registry_name == name) {
+                    let output = state.outputs.swap_remove(index);
+                    output.destroy();
+                }
+            }
+            _ => (),
         }
     }
 }
@@ -221,8 +248,8 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .find(|o| o.wl_output == *proxy)
                 // should be able to find the same wl_output right after binding
                 .unwrap();
-            output.output_name = name;
-            log::info!("new output: {}", &output.output_name);
+            output.output_name = Some(name);
+            log::info!("new output: `{}`", output.get_label());
         }
     }
 }
@@ -248,16 +275,22 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
         _conn: &Connection,
         _qh: &QueueHandle<Self>,
     ) {
-        if let zwlr_gamma_control_v1::Event::GammaSize { size } = event {
-            let output = state
-                .outputs
-                .iter_mut()
-                // all output should be assigned a gamma_control
-                .find(|o| o.gamma_control.as_ref().unwrap() == proxy)
-                // should be able to find the same gamma_control right after binding
-                .unwrap();
-            output.gamma_size = size as usize;
-            log::info!("output {0} gamma size: {size}", &output.output_name);
+        let index = state
+            .outputs
+            .iter()
+            .position(|o| o.gamma_control.as_ref().unwrap() == proxy)
+            .unwrap();
+        match event {
+            zwlr_gamma_control_v1::Event::GammaSize { size } => {
+                let output = &mut state.outputs[index];
+                output.gamma_size = size as usize;
+                log::info!("output `{0}` gamma size: {size}", output.get_label());
+            }
+            zwlr_gamma_control_v1::Event::Failed => {
+                let output = state.outputs.swap_remove(index);
+                output.destroy();
+            }
+            _ => (),
         }
     }
 }
