@@ -55,9 +55,9 @@ fn main() -> anyhow::Result<()> {
             p.push("config.toml");
             p
         }))
-        .ok_or_else(|| anyhow::anyhow!("do not know where to look for a config file"))?;
+        .ok_or_else(|| anyhow::anyhow!("Do not know where to look for a config file"))?;
     let content =
-        &read_to_string(&path).map_err(|_| anyhow::anyhow!("fail to read file {:?}", &path))?;
+        &read_to_string(&path).map_err(|_| anyhow::anyhow!("Fail to read file {:?}", &path))?;
     let config = RawConfig::read(content)?.check()?;
 
     let (request_sender, request_receiver) = channel();
@@ -70,7 +70,7 @@ fn main() -> anyhow::Result<()> {
 
     let mut output_state = OutputState::new(config.switch_mode, config.location);
     loop {
-        log::info!("enter {} mode", output_state.mode);
+        log::info!("Enter {} mode", output_state.mode);
         request_sender.send(WaylandRequest::ChangeOutputColor(
             "all".to_string(),
             match output_state.mode {
@@ -81,7 +81,7 @@ fn main() -> anyhow::Result<()> {
         wayland_receiver.recv()??;
 
         log::info!(
-            "thread sleep for {} seconds until next mode switch",
+            "Thread sleep for {} seconds until next mode switch",
             output_state.delay_in_seconds
         );
         thread::sleep(Duration::from_secs(output_state.delay_in_seconds as u64));

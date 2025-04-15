@@ -144,7 +144,7 @@ impl RawConfig {
         fn parse_time_mode(time: &str) -> TimeProviderMode {
             TimeProviderMode::Fixed(
                 NaiveTime::parse_from_str(time, "%H:%M")
-                    .expect("naive time parse from string failed"),
+                    .expect("Naive time parse from string failed"),
             )
         }
 
@@ -184,7 +184,8 @@ impl RawConfig {
     }
 }
 
-#[derive(PartialEq, Eq, Debug)]
+#[derive(PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
 pub enum TimeProviderMode {
     Auto,
     Fixed(NaiveTime),
@@ -199,7 +200,7 @@ impl TimeProviderMode {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(test, derive(Debug))]
 pub struct SwitchMode {
     pub day: TimeProviderMode,
     pub night: TimeProviderMode,

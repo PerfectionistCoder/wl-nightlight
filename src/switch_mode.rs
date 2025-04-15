@@ -1,4 +1,3 @@
-use core::panic;
 use std::fmt::Display;
 
 use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
@@ -40,11 +39,11 @@ struct TimeProviderState {
 
 impl TimeProviderState {
     fn set_coord(&mut self, latitude: f64, longitude: f64) {
-        self.coord = Some(Coordinates::new(latitude, longitude).expect("coordinates out of range"));
+        self.coord = Some(Coordinates::new(latitude, longitude).expect("Coordinates out of range"));
     }
 }
 
-trait TimeProvider {
+trait TimeProvider: std::fmt::Display {
     fn new(state: &TimeProviderState) -> Self
     where
         Self: Sized;
@@ -63,7 +62,7 @@ impl TimeProvider for AutoTimeProvider {
     {
         let TimeProviderState { coord, .. } = *state;
         Self {
-            coord: coord.expect("coordinates not set"),
+            coord: coord.expect("Coordinates not set"),
         }
     }
     fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
@@ -71,6 +70,12 @@ impl TimeProvider for AutoTimeProvider {
     }
     fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
         SolarDay::new(self.coord, date).event_time(Sunset)
+    }
+}
+
+impl std::fmt::Display for AutoTimeProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "auto")
     }
 }
 
@@ -95,16 +100,22 @@ impl TimeProvider for FixedTimeProvider {
         }
     }
     fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.day_time.expect("fixed day time not set"))
+        NaiveDateTime::new(date, self.day_time.expect("Fixed day time not set"))
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
     }
     fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.night_time.expect("fixed night time not set"))
+        NaiveDateTime::new(date, self.night_time.expect("Fixed night time not set"))
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
+    }
+}
+
+impl std::fmt::Display for FixedTimeProvider {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "fixed")
     }
 }
 
@@ -170,7 +181,13 @@ fn get_next_mode_switch(
     let night_time = night_time_provider.get_night_time(date);
 
     if day_time > night_time {
-        panic!();
+        log::error!(
+            "[switch-mode.day] `{}` ({}) is greater than [switch-mode.night] `{}` ({})",
+            day_time.with_timezone(&Local).format("%H:%M"),
+            day_time_provider,
+            night_time.with_timezone(&Local).format("%H:%M"),
+            night_time_provider
+        );
     }
 
     let mode: OutputMode;
