@@ -14,7 +14,8 @@ use sunrise::{
 
 use crate::config::{Location, SwitchMode, TimeProviderMode};
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(PartialEq, Eq)]
+#[cfg_attr(test, derive(Debug))]
 pub enum OutputMode {
     Day,
     Night,
@@ -29,7 +30,7 @@ impl Display for OutputMode {
     }
 }
 
-#[derive(Default, Debug)]
+#[derive(Default)]
 struct TimeProviderState {
     coord: Option<Coordinates>,
     fixed_day_time: Option<NaiveTime>,
@@ -42,7 +43,7 @@ impl TimeProviderState {
     }
 }
 
-trait TimeProvider: std::fmt::Debug {
+trait TimeProvider {
     fn new(state: &TimeProviderState) -> Self
     where
         Self: Sized;
@@ -50,7 +51,6 @@ trait TimeProvider: std::fmt::Debug {
     fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc>;
 }
 
-#[derive(Debug)]
 struct AutoTimeProvider {
     coord: Coordinates,
 }
@@ -73,7 +73,6 @@ impl TimeProvider for AutoTimeProvider {
     }
 }
 
-#[derive(Debug)]
 struct FixedTimeProvider {
     day_time: NaiveTime,
     night_time: NaiveTime,
@@ -108,7 +107,6 @@ impl TimeProvider for FixedTimeProvider {
     }
 }
 
-#[derive(Debug)]
 pub struct OutputState {
     pub mode: OutputMode,
     pub delay_in_seconds: i64,

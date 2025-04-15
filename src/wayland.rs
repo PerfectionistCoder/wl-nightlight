@@ -109,7 +109,7 @@ impl Wayland {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(test, derive(Debug))]
 struct WaylandState {
     outputs: Vec<DisplayOutput>,
     gamma_manager: Option<ZwlrGammaControlManagerV1>,
@@ -124,7 +124,7 @@ impl WaylandState {
     }
 }
 
-#[derive(Debug)]
+#[cfg_attr(test, derive(Debug))]
 struct DisplayOutput {
     registry_name: u32,
     wl_output: WlOutput,

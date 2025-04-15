@@ -1,7 +1,6 @@
 use std::{
     fmt::{self, Display},
     ops::Deref,
-    str::FromStr,
 };
 
 use chrono::NaiveTime;
