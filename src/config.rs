@@ -40,9 +40,9 @@ fn validate_switch_mode(value: &str) -> Result<(), ValidationError> {
 #[derive(Deserialize, Debug, Validate)]
 pub struct SwitchModeConfig {
     #[validate(custom(function = "validate_switch_mode"))]
-    pub day: Option<String>,
+    day: Option<String>,
     #[validate(custom(function = "validate_switch_mode"))]
-    pub night: Option<String>,
+    night: Option<String>,
 }
 
 #[derive(Deserialize, Debug, Validate)]
@@ -54,9 +54,9 @@ pub struct RawConfig {
     #[validate(nested)]
     night: Option<ColorConfig>,
     #[validate(nested)]
-    pub location: Option<Location>,
+    location: Option<Location>,
     #[validate(nested)]
-    pub switch_mode: Option<SwitchModeConfig>,
+    switch_mode: Option<SwitchModeConfig>,
 }
 
 #[derive(Error, Debug)]

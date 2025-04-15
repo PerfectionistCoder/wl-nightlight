@@ -22,8 +22,8 @@ pub enum WaylandRequest {
 }
 
 pub struct Wayland {
-    pub connection: Connection,
-    pub state: WaylandState,
+    connection: Connection,
+    state: WaylandState,
     sender: Sender<anyhow::Result<()>>,
     receiver: Receiver<WaylandRequest>,
 }
@@ -111,8 +111,8 @@ impl Wayland {
 }
 
 #[derive(Debug)]
-pub struct WaylandState {
-    pub outputs: Vec<DisplayOutput>,
+struct WaylandState {
+    outputs: Vec<DisplayOutput>,
     gamma_manager: Option<ZwlrGammaControlManagerV1>,
 }
 
@@ -126,7 +126,7 @@ impl WaylandState {
 }
 
 #[derive(Debug)]
-pub struct DisplayOutput {
+struct DisplayOutput {
     registry_name: u32,
     wl_output: WlOutput,
     output_name: String,
