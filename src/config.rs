@@ -65,6 +65,7 @@ enum ConfigError {
     MissingLocation,
 }
 
+#[cfg(not(tarpaulin_include))]
 impl Display for ConfigError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
         fn print_errors(

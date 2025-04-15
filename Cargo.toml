@@ -21,3 +21,6 @@ toml = { version = "0.8.20", default-features = false, features = ["parse"] }
 validator = { version = "0.20.0", features = ["derive"] }
 wayland-client = "0.31.8"
 wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }

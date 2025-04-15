@@ -23,6 +23,7 @@
             rustfmt
             clippy
             rust-analyzer
+            cargo-tarpaulin
           ];
           RUST_SRC_PATH = "${pkgs.rust.packages.stable.rustPlatform.rustLibSrc}";
         };
