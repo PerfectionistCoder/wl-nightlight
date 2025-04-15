@@ -46,7 +46,7 @@ impl Wayland {
 
         if state.gamma_manager.is_none() {
             anyhow::bail!(
-                "Your Wayland compositor is not supported because it does not implement the wlr-gamma-control-unstable-v1 protocol"
+                "your Wayland compositor is not supported because it does not implement the wlr-gamma-control-unstable-v1 protocol"
             )
         }
 
@@ -89,7 +89,7 @@ impl Wayland {
                             match output {
                                 Some(output) => output.set_color(color)?,
                                 None => {
-                                    log::warn!("no output `{}` found", name);
+                                    log::warn!("no output name `{}` found", name);
                                 }
                             }
                         }
@@ -146,20 +146,13 @@ impl DisplayOutput {
         }
     }
 
-    fn get_label(&self) -> String {
-        if let Some(output_name) = &self.output_name {
-            String::from(output_name)
-        } else {
-            self.registry_name.to_string()
-        }
-    }
-
-    fn get_gamma_control(&self) -> &ZwlrGammaControlV1 {
-        self.gamma_control.as_ref().expect("")
+    fn try_get_gamma_control(&self) -> &ZwlrGammaControlV1 {
+        let msg = format!("no gamma control for output: `{}`", self.registry_name);
+        self.gamma_control.as_ref().expect(&msg)
     }
 
     fn destroy(&self) {
-        log::info!("output `{}` destroyed", self.get_label());
+        log::debug!("destroy output: `{}`", self.registry_name);
         if let Some(gamma_control) = &self.gamma_control {
             gamma_control.destroy();
         };
@@ -178,7 +171,7 @@ impl DisplayOutput {
         let (r, rest) = buf.split_at_mut(self.gamma_size);
         let (g, b) = rest.split_at_mut(self.gamma_size);
         fill_color_ramp(r, g, b, self.gamma_size, self.color);
-        self.get_gamma_control().set_gamma(file.as_fd());
+        self.try_get_gamma_control().set_gamma(file.as_fd());
 
         Ok(())
     }
@@ -208,10 +201,10 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
                 interface,
                 version,
             } => {
-                log::debug!("global: [{name}] {interface} v{version}");
                 if interface == WlOutput::interface().name {
                     let wl_output = registry.bind::<WlOutput, _, _>(name, version, qh, ());
                     state.outputs.push(DisplayOutput::new(name, wl_output));
+                    log::debug!("bind output: `{}`", name);
                 } else if interface == ZwlrGammaControlManagerV1::interface().name {
                     state.gamma_manager = Some(registry.bind::<ZwlrGammaControlManagerV1, _, _>(
                         name,
@@ -219,6 +212,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
                         qh,
                         (),
                     ));
+                    log::debug!("bind gamma control manager");
                 }
             }
             wl_registry::Event::GlobalRemove { name } => {
@@ -247,8 +241,8 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .iter_mut()
                 .find(|o| o.wl_output == *proxy)
                 .expect("received event for unknown output");
+            log::debug!("new output: `{}`, name: `{}`", output.registry_name, name);
             output.output_name = Some(name);
-            log::info!("new output: `{}`", output.get_label());
         }
     }
 }
@@ -277,18 +271,22 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
         let index = state
             .outputs
             .iter()
-            .position(|o| o.get_gamma_control() == proxy)
+            .position(|o| o.try_get_gamma_control() == proxy)
             .expect("received event for unknown input");
         match event {
             zwlr_gamma_control_v1::Event::GammaSize { size } => {
                 let output = &mut state.outputs[index];
                 output.gamma_size = size as usize;
-                log::debug!("output `{0}` gamma size: {size}", output.get_label());
+                log::debug!(
+                    "new gamma control for output `{}`, gamma size: `{}`",
+                    output.registry_name,
+                    size
+                );
             }
             zwlr_gamma_control_v1::Event::Failed => {
                 let output = state.outputs.swap_remove(index);
                 output.destroy();
-                log::error!("output `{}` event failed", output.get_label());
+                log::error!("output `{}` event failed", output.registry_name);
             }
             _ => (),
         }

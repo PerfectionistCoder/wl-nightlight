@@ -5,15 +5,15 @@ mod wayland;
 
 use std::{fs::read_to_string, sync::mpsc::channel, thread, time::Duration};
 
-use ::log::LevelFilter;
 use config::RawConfig;
+use log::LevelFilter;
 use simple_logger::SimpleLogger;
 use switch_mode::{OutputMode, OutputState};
 use wayland::{Wayland, WaylandRequest};
 
 fn main() -> anyhow::Result<()> {
     SimpleLogger::new()
-        .with_level(LevelFilter::Info)
+        .with_level(LevelFilter::Debug)
         .with_local_timestamps()
         .with_timestamp_format(time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]:[second]"

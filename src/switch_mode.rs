@@ -74,8 +74,8 @@ impl TimeProvider for AutoTimeProvider {
 }
 
 struct FixedTimeProvider {
-    day_time: NaiveTime,
-    night_time: NaiveTime,
+    day_time: Option<NaiveTime>,
+    night_time: Option<NaiveTime>,
 }
 
 impl TimeProvider for FixedTimeProvider {
@@ -89,18 +89,18 @@ impl TimeProvider for FixedTimeProvider {
             ..
         } = *state;
         Self {
-            day_time: fixed_day_time.expect("fixed day time not set"),
-            night_time: fixed_night_time.expect("fixed night time not set"),
+            day_time: fixed_day_time,
+            night_time: fixed_night_time,
         }
     }
     fn get_day_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.day_time)
+        NaiveDateTime::new(date, self.day_time.expect("fixed day time not set"))
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
     }
     fn get_night_time(&self, date: NaiveDate) -> DateTime<chrono::Utc> {
-        NaiveDateTime::new(date, self.night_time)
+        NaiveDateTime::new(date, self.night_time.expect("fixed night time not set"))
             .and_local_timezone(Local)
             .unwrap()
             .to_utc()
