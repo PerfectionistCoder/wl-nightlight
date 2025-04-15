@@ -21,9 +21,7 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     let path = "extra/example.toml";
-    let config = RawConfig::read(&read_to_string(path).unwrap())?
-        .check()?
-        .parse()?;
+    let config = RawConfig::read(&read_to_string(path).unwrap())?.check()?;
 
     let (request_sender, request_receiver) = channel();
     let (wayland_sender, wayland_receiver) = channel();

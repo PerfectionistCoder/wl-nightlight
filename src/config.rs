@@ -3,7 +3,7 @@ use std::fmt::Display;
 use chrono::NaiveTime;
 use serde::Deserialize;
 use thiserror::Error;
-use validator::{Validate, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors};
 
 use crate::color::Color;
 
@@ -27,9 +27,17 @@ pub struct Location {
     pub longitude: f64,
 }
 
+fn validate_switch_mode(value: &str) -> Result<(), ValidationError> {
+    NaiveTime::parse_from_str(value, "%H:%M")
+        .map(|_| ())
+        .map_err(|_| ValidationError::new("fixed time"))
+}
+
 #[derive(Deserialize, Debug, Validate)]
 pub struct SwitchModeConfig {
+    #[validate(custom(function = "validate_switch_mode"))]
     pub day: Option<String>,
+    #[validate(custom(function = "validate_switch_mode"))]
     pub night: Option<String>,
 }
 
@@ -52,7 +60,6 @@ pub struct RawConfig {
 enum ConfigError {
     Invalid(ValidationErrors),
     MissingLocation,
-    InvalidTime(String),
 }
 
 impl Display for ConfigError {
@@ -66,14 +73,14 @@ impl RawConfig {
         toml::from_str(file)
     }
 
-    pub fn check(self) -> anyhow::Result<Self> {
-        Ok(self
-            .validate()
+    pub fn check(self) -> anyhow::Result<Config> {
+        self.validate()
             .map_err(ConfigError::Invalid)
-            .map(|_| self)?)
+            .map(|_| self)?
+            .parse()
     }
 
-    pub fn parse(self) -> anyhow::Result<Config> {
+    fn parse(self) -> anyhow::Result<Config> {
         fn fill_color(color: Option<ColorConfig>) -> Color {
             let default = Color::default();
             color.map_or(default, |c| Color {
@@ -84,12 +91,9 @@ impl RawConfig {
             })
         }
 
-        fn parse_time_mode(time: &str) -> anyhow::Result<TimeProviderMode> {
-            fn parse_time(time: &str) -> anyhow::Result<NaiveTime> {
-                Ok(NaiveTime::parse_from_str(time, "%H:%M")
-                    .map_err(|_| ConfigError::InvalidTime(time.to_string()))?)
-            }
-            Ok(TimeProviderMode::Fixed(parse_time(time)?))
+        fn parse_time_mode(time: &str) -> TimeProviderMode {
+            // validation done before parsing
+            TimeProviderMode::Fixed(NaiveTime::parse_from_str(time, "%H:%M").unwrap())
         }
 
         let day_color = fill_color(self.day);
@@ -105,10 +109,10 @@ impl RawConfig {
             Some(switch_mode) => {
                 day_mode = switch_mode
                     .day
-                    .map_or(Ok(TimeProviderMode::Auto), |time| parse_time_mode(&time))?;
+                    .map_or(TimeProviderMode::Auto, |time| parse_time_mode(&time));
                 night_mode = switch_mode
                     .night
-                    .map_or(Ok(TimeProviderMode::Auto), |time| parse_time_mode(&time))?;
+                    .map_or(TimeProviderMode::Auto, |time| parse_time_mode(&time));
             }
         }
 
@@ -160,7 +164,8 @@ pub struct Config {
 #[cfg(test)]
 mod test {
     use core::panic;
-    use std::collections::HashMap;
+
+    use validator::ValidationErrorsKind;
 
     use super::*;
 
@@ -179,12 +184,7 @@ mod test {
                 latitude = 0
                 longitude = 0
             ";
-        let config = RawConfig::read(file)
-            .unwrap()
-            .check()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let config = RawConfig::read(file).unwrap().check().unwrap();
         assert_eq!(config.day, Color::default());
         assert_eq!(config.night, Color::default());
         assert_eq!(
@@ -213,12 +213,7 @@ mod test {
                 latitude = 0
                 longitude = 0
             ";
-        let config = RawConfig::read(file)
-            .unwrap()
-            .check()
-            .unwrap()
-            .parse()
-            .unwrap();
+        let config = RawConfig::read(file).unwrap().check().unwrap();
         assert_eq!(
             config.day,
             Color {
@@ -244,7 +239,7 @@ mod test {
         fn day_night_auto() {
             let file = "";
             cmp_err(
-                RawConfig::read(file).unwrap().check().unwrap().parse(),
+                RawConfig::read(file).unwrap().check(),
                 ConfigError::MissingLocation,
             );
         }
@@ -256,7 +251,7 @@ mod test {
                 night = \"00:00\"
             ";
             cmp_err(
-                RawConfig::read(file).unwrap().check().unwrap().parse(),
+                RawConfig::read(file).unwrap().check(),
                 ConfigError::MissingLocation,
             );
         }
@@ -268,7 +263,7 @@ mod test {
                 day = \"00:00\"
             ";
             cmp_err(
-                RawConfig::read(file).unwrap().check().unwrap().parse(),
+                RawConfig::read(file).unwrap().check(),
                 ConfigError::MissingLocation,
             );
         }
@@ -280,12 +275,7 @@ mod test {
                 day = \"00:00\"
                 night = \"00:00\"
             ";
-            RawConfig::read(file)
-                .unwrap()
-                .check()
-                .unwrap()
-                .parse()
-                .unwrap();
+            RawConfig::read(file).unwrap().check().unwrap();
         }
     }
 
@@ -293,16 +283,22 @@ mod test {
     fn latitude() {
         let file = "
                 [location]
-                latitude = 90.1
+                latitude = 91
                 longitude = 0
             ";
 
-        assert!(RawConfig::read(file).unwrap().check().is_err_and(|e| {
-            matches!(
-                e.downcast::<ConfigError>().unwrap(),
-                ConfigError::Invalid(_)
+        assert!(matches!(
+            RawConfig::read(file).unwrap().check(),
+            Err(err) if matches!(
+                err.downcast_ref::<ConfigError>(),
+                Some(ConfigError::Invalid(ValidationErrors(map)))
+                    if matches!(
+                        map.get("location"),
+                        Some(ValidationErrorsKind::Struct(errs))
+                            if errs.errors().contains_key("latitude")
+                    )
             )
-        }),);
+        ));
     }
 
     #[test]
@@ -313,12 +309,18 @@ mod test {
                 longitude = -180.1
             ";
 
-        assert!(RawConfig::read(file).unwrap().check().is_err_and(|e| {
-            matches!(
-                e.downcast::<ConfigError>().unwrap(),
-                ConfigError::Invalid(_)
+        assert!(matches!(
+            RawConfig::read(file).unwrap().check(),
+            Err(err) if matches!(
+                err.downcast_ref::<ConfigError>(),
+                Some(ConfigError::Invalid(ValidationErrors(map)))
+                    if matches!(
+                        map.get("location"),
+                        Some(ValidationErrorsKind::Struct(errs))
+                            if errs.errors().contains_key("longitude")
+                    )
             )
-        }),);
+        ));
     }
 
     #[test]
@@ -333,9 +335,12 @@ mod test {
         assert!(RawConfig::read(file).is_err());
     }
 
-    #[test]
-    fn fixed_auto() {
-        let file = "
+    mod time_provider {
+        use super::*;
+
+        #[test]
+        fn day_auto_night_fixed() {
+            let file = "
                     [location]
                     latitude = 0
                     longitude = 0
@@ -343,16 +348,78 @@ mod test {
                     [switch-mode]
                     night = \"19:30\"
                 ";
-        let config = RawConfig::read(file)
-            .unwrap()
-            .check()
-            .unwrap()
-            .parse()
-            .unwrap();
-        assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
-        assert_eq!(
-            config.switch_mode.night,
-            TimeProviderMode::Fixed(NaiveTime::from_hms_opt(19, 30, 0).unwrap())
-        );
+            let config = RawConfig::read(file).unwrap().check().unwrap();
+            assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
+            assert_eq!(
+                config.switch_mode.night,
+                TimeProviderMode::Fixed(NaiveTime::from_hms_opt(19, 30, 0).unwrap())
+            );
+        }
+
+        #[test]
+        fn day_fixed_night_auto() {
+            let file = "
+                    [location]
+                    latitude = 0
+                    longitude = 0
+
+                    [switch-mode]
+                    day = \"08:30\"
+                ";
+            let config = RawConfig::read(file).unwrap().check().unwrap();
+            assert_eq!(
+                config.switch_mode.day,
+                TimeProviderMode::Fixed(NaiveTime::from_hms_opt(8, 30, 0).unwrap())
+            );
+            assert_eq!(config.switch_mode.night, TimeProviderMode::Auto);
+        }
+    }
+
+    mod parse_time {
+        use super::*;
+
+        #[test]
+        fn random_string() {
+            let file = "
+                [switch-mode]
+                day = \"foo\"                
+                night = \"bar\"
+            ";
+
+            assert!(matches!(
+                RawConfig::read(file).unwrap().check(),
+                Err(err) if matches!(
+                    err.downcast_ref::<ConfigError>(),
+                    Some(ConfigError::Invalid(ValidationErrors(map)))
+                        if matches!(
+                         map.get("switch_mode"),
+                         Some(ValidationErrorsKind::Struct(errs))
+                          if errs.errors().contains_key("day") && errs.errors().contains_key("night")
+                        )
+                )
+            ));
+        }
+
+        #[test]
+        fn invalid_time() {
+            let file = "
+                [switch-mode]
+                day = \"25:00\"                
+                night = \"00:61\"
+            ";
+
+            assert!(matches!(
+                RawConfig::read(file).unwrap().check(),
+                Err(err) if matches!(
+                    err.downcast_ref::<ConfigError>(),
+                    Some(ConfigError::Invalid(ValidationErrors(map)))
+                        if matches!(
+                         map.get("switch_mode"),
+                         Some(ValidationErrorsKind::Struct(errs))
+                          if errs.errors().contains_key("day") && errs.errors().contains_key("night")
+                        )
+                )
+            ));
+        }
     }
 }
