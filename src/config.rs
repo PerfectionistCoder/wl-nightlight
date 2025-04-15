@@ -1,9 +1,13 @@
-use std::fmt::Display;
+use std::{
+    fmt::{self, Display},
+    ops::Deref,
+    str::FromStr,
+};
 
 use chrono::NaiveTime;
 use serde::Deserialize;
 use thiserror::Error;
-use validator::{Validate, ValidationError, ValidationErrors};
+use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
 
 use crate::color::Color;
 
@@ -30,7 +34,7 @@ pub struct Location {
 fn validate_switch_mode(value: &str) -> Result<(), ValidationError> {
     NaiveTime::parse_from_str(value, "%H:%M")
         .map(|_| ())
-        .map_err(|_| ValidationError::new("fixed time"))
+        .map_err(|_| ValidationError::new("time"))
 }
 
 #[derive(Deserialize, Debug, Validate)]
@@ -63,8 +67,55 @@ enum ConfigError {
 }
 
 impl Display for ConfigError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        writeln!(f, "{:?}", self)
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> fmt::Result {
+        fn print_errors(
+            errors: &ValidationErrors,
+            f: &mut fmt::Formatter<'_>,
+            path_prefix: String,
+        ) -> fmt::Result {
+            for (field, error_kind) in &errors.0 {
+                let field_path = if path_prefix.is_empty() {
+                    String::from_str("[").unwrap() + field
+                } else {
+                    format!("{}.{}", path_prefix, field)
+                };
+
+                match error_kind {
+                    ValidationErrorsKind::Field(errors) => {
+                        for error in errors {
+                            let detail = match error.code.deref() {
+                                "range" => format!(
+                                    "is not in range [{}, {}]",
+                                    error.params.get("min").unwrap(),
+                                    error.params.get("max").unwrap()
+                                ),
+                                "time" => "is not in format `HH:MM`".to_string(),
+                                _ => panic!(),
+                            };
+                            writeln!(f, "{}] {}", field_path, detail)?;
+                        }
+                    }
+                    ValidationErrorsKind::Struct(nested_errors) => {
+                        print_errors(nested_errors, f, field_path)?;
+                    }
+                    ValidationErrorsKind::List(items) => {
+                        for (index, nested_errors) in items {
+                            let indexed_path = format!("{}[{}]", field_path, index);
+                            print_errors(nested_errors, f, indexed_path)?;
+                        }
+                    }
+                }
+            }
+            Ok(())
+        }
+
+        match self {
+            Self::Invalid(v_e) => print_errors(v_e, f, String::new()),
+            Self::MissingLocation => writeln!(
+                f,
+                "[location] is required when [switch-mode.day] or [switch-mode.night] is unset"
+            ),
+        }
     }
 }
 
