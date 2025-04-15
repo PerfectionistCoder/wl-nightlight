@@ -1,14 +1,12 @@
-use struct_patch::Filler;
-
-#[derive(Debug, Clone, Copy, PartialEq, Filler)]
-pub struct OutputColor {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Color {
     pub temperature: u16,
     pub gamma: f64,
     pub brightness: f64,
     pub inverted: bool,
 }
 
-impl Default for OutputColor {
+impl Default for Color {
     fn default() -> Self {
         Self {
             temperature: 6500,
@@ -19,7 +17,7 @@ impl Default for OutputColor {
     }
 }
 
-fn map_intensity(v: f64, white: f64, color: OutputColor, v_max_gamma: f64) -> u16 {
+fn map_intensity(v: f64, white: f64, color: Color, v_max_gamma: f64) -> u16 {
     ((v * white).powf(color.gamma) * v_max_gamma) as u16
 }
 
@@ -28,7 +26,7 @@ pub fn fill_color_ramp(
     g: &mut [u16],
     b: &mut [u16],
     ramp_size: usize,
-    color: OutputColor,
+    color: Color,
 ) {
     let color_i = ((color.temperature as usize - 1000) / 100) * 3;
     let [white_r, white_g, white_b] = interpolate_color(

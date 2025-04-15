@@ -4,7 +4,3 @@ temperature = 5500
 [location]
 latitude = 51.0
 longitude = -0.1
-
-[switch-mode]
-day = "auto"
-night = "auto"

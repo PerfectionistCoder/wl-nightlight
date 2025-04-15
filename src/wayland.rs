@@ -15,10 +15,10 @@ use wayland_protocols_wlr::gamma_control::v1::client::{
     zwlr_gamma_control_v1::{self, ZwlrGammaControlV1},
 };
 
-use crate::color::{OutputColor, fill_color_ramp};
+use crate::color::{Color, fill_color_ramp};
 
 pub enum WaylandRequest {
-    ChangeOutputColor(String, OutputColor),
+    ChangeOutputColor(String, Color),
 }
 
 pub struct Wayland {
@@ -132,7 +132,7 @@ pub struct DisplayOutput {
     output_name: String,
     gamma_control: Option<ZwlrGammaControlV1>,
     gamma_size: usize,
-    color: OutputColor,
+    color: Color,
 }
 
 impl DisplayOutput {
@@ -143,7 +143,7 @@ impl DisplayOutput {
             output_name: "".to_string(),
             gamma_control: None,
             gamma_size: 0,
-            color: OutputColor::default(),
+            color: Color::default(),
         }
     }
 
@@ -168,7 +168,7 @@ impl DisplayOutput {
         Ok(())
     }
 
-    fn set_color(&mut self, color: OutputColor) -> anyhow::Result<()> {
+    fn set_color(&mut self, color: Color) -> anyhow::Result<()> {
         if self.color != color {
             self.color = color;
             self.update_gamma()?;

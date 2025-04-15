@@ -3,7 +3,7 @@ mod config;
 mod switch_mode;
 mod wayland;
 
-use std::{sync::mpsc::channel, thread, time::Duration};
+use std::{fs::read_to_string, sync::mpsc::channel, thread, time::Duration};
 
 use ::log::LevelFilter;
 use config::RawConfig;
@@ -21,7 +21,9 @@ fn main() -> anyhow::Result<()> {
         .init()?;
 
     let path = "extra/example.toml";
-    let config = RawConfig::new(path).parse();
+    let config = RawConfig::read(&read_to_string(path).unwrap())?
+        .check()?
+        .parse()?;
 
     let (request_sender, request_receiver) = channel();
     let (wayland_sender, wayland_receiver) = channel();

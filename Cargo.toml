@@ -13,7 +13,9 @@ serde = { version = "1.0.219", features = ["derive"] }
 shmemfdrs2 = "1.0.0"
 simple_logger = { version = "5.0.0", features = ["stderr"] }
 sunrise = "1.2.1"
+thiserror = "2.0.12"
 time = "0.3.41"
 toml = { version = "0.8.20", default-features = false, features = ["parse"] }
+validator = { version = "0.20.0", features = ["derive"] }
 wayland-client = "0.31.8"
 wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }
