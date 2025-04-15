@@ -3,7 +3,8 @@ mod config;
 mod switch_mode;
 mod wayland;
 
-use std::{fs::read_to_string, sync::mpsc::channel, thread, time::Duration};
+use clap::Parser;
+use std::{fs::read_to_string, path::PathBuf, sync::mpsc::channel, thread, time::Duration};
 
 use config::RawConfig;
 use log::LevelFilter;
@@ -11,17 +12,53 @@ use simple_logger::SimpleLogger;
 use switch_mode::{OutputMode, OutputState};
 use wayland::{Wayland, WaylandRequest};
 
+#[derive(Parser)]
+#[command(version,about,long_about = None)]
+struct Cli {
+    /// Sets config file
+    #[arg(short, long, value_name = "path")]
+    config: Option<PathBuf>,
+    #[arg(short, action = clap::ArgAction::Count, default_value_t = 3,
+    help = "Sets the level of verbosity of logs\n(default is -vvv, max level is -vvvv)")]
+    verbose: u8,
+    /// Turn off all logs
+    #[arg(short, long)]
+    quite: bool,
+}
+
 fn main() -> anyhow::Result<()> {
+    let cli = Cli::parse();
+
+    let level_filter = if cli.quite {
+        LevelFilter::Off
+    } else {
+        match cli.verbose {
+            1 => LevelFilter::Error,
+            2 => LevelFilter::Warn,
+            3 => LevelFilter::Info,
+            _ => LevelFilter::Debug,
+        }
+    };
+
     SimpleLogger::new()
-        .with_level(LevelFilter::Debug)
+        .with_level(level_filter)
         .with_local_timestamps()
         .with_timestamp_format(time::macros::format_description!(
             "[year]-[month]-[day] [hour]:[minute]:[second]"
         ))
         .init()?;
 
-    let path = "extra/example.toml";
-    let config = RawConfig::read(&read_to_string(path).unwrap())?.check()?;
+    let path = cli
+        .config
+        .or(dirs::config_dir().map(|mut p| {
+            p.push(env!("CARGO_PKG_NAME"));
+            p.push("config.toml");
+            p
+        }))
+        .ok_or_else(|| anyhow::anyhow!("do not know where to look for a config file"))?;
+    let content =
+        &read_to_string(&path).map_err(|_| anyhow::anyhow!("fail to read file {:?}", &path))?;
+    let config = RawConfig::read(content)?.check()?;
 
     let (request_sender, request_receiver) = channel();
     let (wayland_sender, wayland_receiver) = channel();
