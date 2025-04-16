@@ -3,6 +3,7 @@ mod config;
 mod switch_mode;
 mod wayland;
 
+use chrono::{Local, TimeDelta};
 use clap::Parser;
 use std::{fs::read_to_string, path::PathBuf, sync::mpsc::channel, thread, time::Duration};
 
@@ -73,18 +74,18 @@ fn main() -> anyhow::Result<()> {
     let mut output_state = OutputState::new(config.switch_mode, config.location);
     loop {
         log::info!("Enter {} mode", output_state.mode);
-        request_sender.send(WaylandRequest::ChangeOutputColor(
-            "all".to_string(),
-            match output_state.mode {
-                OutputMode::Day => config.day,
-                OutputMode::Night => config.night,
-            },
-        ))?;
+        request_sender.send(WaylandRequest::ChangeOutputColor(match output_state.mode {
+            OutputMode::Day => config.day,
+            OutputMode::Night => config.night,
+        }))?;
         wayland_receiver.recv()??;
 
+        let next_mode_switch = Local::now()
+            + TimeDelta::new(output_state.delay_in_seconds, 0)
+                .expect("Internal: Time delta out of bound");
         log::info!(
-            "Thread sleep for {} seconds until next mode switch",
-            output_state.delay_in_seconds
+            "Thread sleep until {} for next mode switch",
+            next_mode_switch.format("%Y-%m-%d %H:%M")
         );
         thread::sleep(Duration::from_secs(output_state.delay_in_seconds as u64));
         output_state.next();

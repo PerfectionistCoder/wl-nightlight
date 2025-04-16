@@ -144,7 +144,7 @@ impl RawConfig {
         fn parse_time_mode(time: &str) -> TimeProviderMode {
             TimeProviderMode::Fixed(
                 NaiveTime::parse_from_str(time, "%H:%M")
-                    .expect("Naive time parse from string failed"),
+                    .expect("Internal: Naive time parse from string failed"),
             )
         }
 

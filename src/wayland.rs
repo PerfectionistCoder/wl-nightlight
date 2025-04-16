@@ -18,7 +18,7 @@ use wayland_protocols_wlr::gamma_control::v1::client::{
 use crate::color::{Color, fill_color_ramp};
 
 pub enum WaylandRequest {
-    ChangeOutputColor(String, Color),
+    ChangeOutputColor(Color),
 }
 
 pub struct Wayland {
@@ -74,26 +74,11 @@ impl Wayland {
                     .roundtrip(&mut self.state)?;
 
                 match request {
-                    WaylandRequest::ChangeOutputColor(name, color) => match &name[..] {
-                        "all" => {
-                            for output in self.state.outputs.iter_mut() {
-                                output.set_color(color)?;
-                            }
+                    WaylandRequest::ChangeOutputColor(color) => {
+                        for output in self.state.outputs.iter_mut() {
+                            output.set_color(color)?;
                         }
-                        _ => {
-                            let output = self
-                                .state
-                                .outputs
-                                .iter_mut()
-                                .find(|o| o.output_name.as_ref().is_some_and(|n| n == &name));
-                            match output {
-                                Some(output) => output.set_color(color)?,
-                                None => {
-                                    log::warn!("No output name `{}` found", name);
-                                }
-                            }
-                        }
-                    },
+                    }
                 }
 
                 self.sender.send(Ok(()))?;
@@ -105,7 +90,7 @@ impl Wayland {
 
         self.sender
             .send(result)
-            .expect("Main thread receiver dropped unexpectedly");
+            .expect("Internal: Main thread receiver dropped unexpectedly");
     }
 }
 
@@ -149,7 +134,7 @@ impl DisplayOutput {
     fn try_get_gamma_control(&self) -> &ZwlrGammaControlV1 {
         self.gamma_control
             .as_ref()
-            .expect("No gamma control for output")
+            .expect("Internal: No gamma control for output")
     }
 
     fn destroy(&self) {
@@ -162,6 +147,10 @@ impl DisplayOutput {
 
     fn update_gamma(&mut self) -> anyhow::Result<()> {
         if self.gamma_size == 0 {
+            log::warn!(
+                "Skip updating gamma of output `{}` as the gamma size is 0",
+                self.registry_name
+            );
             return Ok(());
         }
 
@@ -241,7 +230,7 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .outputs
                 .iter_mut()
                 .find(|o| o.wl_output == *proxy)
-                .expect("Received event for unknown output");
+                .expect("Internal: Received event for unknown output");
             log::debug!("New output: `{}`, name: `{}`", output.registry_name, name);
             output.output_name = Some(name);
         }
@@ -273,7 +262,7 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
             .outputs
             .iter()
             .position(|o| o.try_get_gamma_control() == proxy)
-            .expect("Received event for unknown input");
+            .expect("Internal: Received event for unknown input");
         match event {
             zwlr_gamma_control_v1::Event::GammaSize { size } => {
                 let output = &mut state.outputs[index];
@@ -287,7 +276,10 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
             zwlr_gamma_control_v1::Event::Failed => {
                 let output = state.outputs.swap_remove(index);
                 output.destroy();
-                log::error!("Output `{}` event failed", output.registry_name);
+                log::error!(
+                    "Gamma control failed to assign gamma size to output `{}`",
+                    output.registry_name
+                );
             }
             _ => (),
         }
