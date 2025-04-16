@@ -27,7 +27,7 @@ wl-nightlight uses a TOML configuration file. By default, it looks for the confi
 
 If `XDG_CONFIG_HOME` is unset, the default of `~/.config` is used.
 
-Configuration documentation is in the [example config file](docs/CONTRIBUTING.md)
+Configuration documentation is in the [example config file](extra/example.toml)
 
 ## Usage
 
