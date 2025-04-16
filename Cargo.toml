@@ -25,3 +25,7 @@ wayland-protocols-wlr = { version = "0.3.6", features = ["client"] }
 
 [lints.rust]
 unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
