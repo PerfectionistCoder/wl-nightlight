@@ -56,8 +56,10 @@ fn main() -> anyhow::Result<()> {
             p
         }))
         .ok_or_else(|| anyhow::anyhow!("Do not know where to look for a config file"))?;
-    let content =
-        &read_to_string(&path).map_err(|_| anyhow::anyhow!("Fail to read file {:?}", &path))?;
+    let content = &read_to_string(&path).map_err(|err| match err.kind() {
+        std::io::ErrorKind::NotFound => anyhow::anyhow!("File {:?} not found", &path),
+        other => anyhow::anyhow!("Fail to read file {:?}, {:?}", &path, other),
+    })?;
     let config = RawConfig::read(content)?.check()?;
 
     let (request_sender, request_receiver) = channel();
