@@ -14,9 +14,19 @@
       system:
       let
         pkgs = nixpkgs.legacyPackages.${system};
+        mkShell = pkgs.mkShell.override {
+          stdenv = pkgs.stdenv.override {
+            preHook = "";
+            allowedRequisites = null;
+            initialPath = pkgs.lib.filter (
+              pkg: pkgs.lib.hasPrefix "coreutils" pkg.name
+            ) pkgs.stdenvNoCC.initialPath;
+            extraNativeBuildInputs = [ ];
+          };
+        };
       in
       {
-        devShells.default = pkgs.mkShell {
+        devShells.default = mkShell {
           nativeBuildInputs = with pkgs; [
             rustc
             cargo
