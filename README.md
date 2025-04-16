@@ -15,9 +15,10 @@
 
 1. Clone this repository
 2. Build and install:
-   ```sh
-   cargo install --path .
-   ```
+   
+```sh
+cargo install --path .
+```
 
 ## Configuration
 
