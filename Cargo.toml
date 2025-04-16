@@ -1,5 +1,6 @@
 [package]
 name = "wl-nightlight"
+description = "Automatically adjust the color settings of your displays between day and night for wayland"
 version = "0.1.0"
 edition = "2024"
 
