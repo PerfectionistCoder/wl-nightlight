@@ -31,3 +31,6 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(tarpaulin_include)'] }
 [profile.release]
 lto = "fat"
 codegen-units = 1
+
+[dev-dependencies]
+serial_test = "3.2.0"

@@ -1,11 +1,11 @@
-use std::fmt::Display;
-
-use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 #[cfg(not(test))]
 use chrono::{Local, Utc};
 #[cfg(test)]
 use mock_chrono::{Local, Utc};
 
+use std::fmt::Display;
+
+use chrono::{DateTime, NaiveDate, NaiveDateTime, NaiveTime};
 use sunrise::{
     Coordinates, SolarDay,
     SolarEvent::{Sunrise, Sunset},

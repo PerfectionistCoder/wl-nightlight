@@ -73,7 +73,7 @@ fn main() -> anyhow::Result<()> {
         }))
         .ok_or_else(|| anyhow::anyhow!("Unable to locate config file"))?;
     let content = &read_to_string(&path)
-        .map_err(|err| anyhow::anyhow!("Fail to read file {:?}, {:?}", &path, err.kind()))?;
+        .map_err(|error| anyhow::anyhow!("Fail to read file {:?}, {}", &path, error))?;
     let config = RawConfig::read(content)?.check()?;
 
     let (request_sender, request_receiver) = channel();

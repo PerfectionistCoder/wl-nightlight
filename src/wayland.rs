@@ -1,3 +1,6 @@
+#[cfg(test)]
+use serial_test::serial;
+
 use std::{
     os::fd::AsFd,
     sync::mpsc::{Receiver, Sender},
@@ -89,7 +92,9 @@ impl Wayland {
                 }
 
                 self.connection.flush()?;
-                self.sender.send(Ok(()))?;
+                self.sender
+                    .send(Ok(()))
+                    .expect("Main thread receiver dropped");
             }
 
             Ok(())
@@ -274,7 +279,7 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
                 let output = &mut state.outputs[index];
                 output.gamma_size = size as usize;
                 log::debug!(
-                    "New gamma control for output `{}`, gamma size `{}`",
+                    "New gamma control for output `{}`, gamma size is `{}`",
                     output.registry_name,
                     size
                 );
@@ -289,5 +294,50 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
             }
             _ => (),
         }
+    }
+}
+
+#[cfg(test)]
+#[serial]
+mod tests {
+    use super::*;
+    use std::sync::mpsc;
+
+    fn get_wayland() -> anyhow::Result<(
+        Wayland,
+        Receiver<anyhow::Result<()>>,
+        Sender<WaylandRequest>,
+    )> {
+        let (req_sender, req_receiver) = mpsc::channel();
+        let (res_sender, res_receiver) = mpsc::channel();
+        let wayland = Wayland::new(res_sender, req_receiver)?;
+        Ok((wayland, res_receiver, req_sender))
+    }
+
+    #[test]
+    fn no_multiple_instance() {
+        let (wayland, ..) = get_wayland().unwrap();
+        assert!(get_wayland().is_err());
+        let _ = wayland;
+    }
+
+    #[test]
+    fn process_requests() {
+        let (mut wayland, receiver, sender) = get_wayland().unwrap();
+
+        sender
+            .send(WaylandRequest::ChangeOutputColor(Color {
+                temperature: 1000,
+                gamma: 0.1,
+                brightness: 0.1,
+                inverted: true,
+            }))
+            .unwrap();
+
+        std::thread::spawn(move || {
+            wayland.process_requests();
+        });
+
+        assert!(receiver.recv().unwrap().is_ok());
     }
 }
