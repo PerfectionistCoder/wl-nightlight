@@ -139,7 +139,7 @@ impl std::fmt::Display for FixedTimeProvider {
 
 pub struct OutputState {
     pub mode: OutputMode,
-    pub delay_in_seconds: i64,
+    pub delay_in_milliseconds: i64,
     day_time_provider: Box<dyn TimeProvider>,
     night_time_provider: Box<dyn TimeProvider>,
 }
@@ -170,22 +170,22 @@ impl OutputState {
             TimeProviderMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)?),
         };
 
-        let (mode, delay_in_seconds) =
+        let (mode, delay_in_milliseconds) =
             get_next_mode_switch(&*day_time_provider, &*night_time_provider)?;
 
         Ok(Self {
             mode,
-            delay_in_seconds,
+            delay_in_milliseconds,
             day_time_provider,
             night_time_provider,
         })
     }
 
     pub fn next(&mut self) -> anyhow::Result<()> {
-        let (mode, delay_in_seconds) =
+        let (mode, delay_in_milliseconds) =
             get_next_mode_switch(&*self.day_time_provider, &*self.night_time_provider)?;
         self.mode = mode;
-        self.delay_in_seconds = delay_in_seconds;
+        self.delay_in_milliseconds = delay_in_milliseconds;
         Ok(())
     }
 }
@@ -222,7 +222,7 @@ fn get_next_mode_switch(
         mode = OutputMode::Night;
         until = day_time_provider.get_day_time(date.succ_opt().unwrap())?
     }
-    Ok((mode, (until - now).num_seconds() + 1))
+    Ok((mode, (until - now).num_milliseconds() + 1))
 }
 
 #[cfg(test)]
@@ -247,8 +247,8 @@ mod test {
         );
     }
 
-    fn forward_time(sec: i64, offset: &FixedOffset) -> DateTime<FixedOffset> {
-        (mock_chrono::Local::now() + TimeDelta::new(sec, 0).unwrap()).with_timezone(offset)
+    fn forward_time(millis: i64, offset: &FixedOffset) -> DateTime<FixedOffset> {
+        (mock_chrono::Local::now() + TimeDelta::milliseconds(millis)).with_timezone(offset)
     }
 
     #[test]
@@ -290,14 +290,14 @@ mod test {
                 set_time(0, 0, NAIROBI_OFFSET);
                 let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                let sunrise = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunset.minute() < 45);
@@ -308,14 +308,14 @@ mod test {
                 set_time(13, 0, NAIROBI_OFFSET);
                 let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                let sunset = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunset.minute() < 45);
 
                 mock_chrono::set(sunset);
                 event.next().unwrap();
-                let sunrise = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
@@ -326,14 +326,14 @@ mod test {
                 set_time(23, 0, NAIROBI_OFFSET);
                 let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                let sunrise = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunset.minute() < 45);
@@ -356,14 +356,14 @@ mod test {
                 set_time(0, 0, OFFSET);
                 let mut event = OutputState::new(DAY_NIGHT_TIME, LOCATION).unwrap();
 
-                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 8);
                 assert_eq!(sunrise.minute(), 0);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
@@ -374,14 +374,14 @@ mod test {
                 set_time(13, 0, OFFSET);
                 let mut event = OutputState::new(DAY_NIGHT_TIME, LOCATION).unwrap();
 
-                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
 
                 mock_chrono::set(sunset);
                 event.next().unwrap();
-                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 8);
                 assert_eq!(sunrise.minute(), 0);
@@ -392,14 +392,14 @@ mod test {
                 set_time(23, 0, OFFSET);
                 let mut event = OutputState::new(DAY_NIGHT_TIME, LOCATION).unwrap();
 
-                let sunrise = forward_time(event.delay_in_seconds, &OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 8);
                 assert_eq!(sunrise.minute(), 0);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_seconds, &OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
@@ -421,14 +421,14 @@ mod test {
                 )
                 .unwrap();
 
-                let sunrise = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
@@ -446,14 +446,14 @@ mod test {
                 )
                 .unwrap();
 
-                let sunrise = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunrise = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Night);
                 assert_eq!(sunrise.hour(), 7);
                 assert_eq!(sunrise.minute(), 0);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_seconds, &NAIROBI_OFFSET);
+                let sunset = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
                 assert_eq!(event.mode, OutputMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunrise.minute() < 45);

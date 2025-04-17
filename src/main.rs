@@ -103,15 +103,14 @@ fn main() -> anyhow::Result<()> {
 
         log::info!(
             "Next mode switch at {}",
-            (Local::now()
-                + TimeDelta::new(output_state.delay_in_seconds, 0).ok_or(InternalError {
-                    message: "Time delta out of bound",
-                })?)
-            .format("%Y-%m-%d %H:%M")
+            (Local::now() + TimeDelta::milliseconds(output_state.delay_in_milliseconds))
+                .format("%Y-%m-%d %H:%M")
         );
 
         timerfd.set_state(
-            TimerState::Oneshot(Duration::from_secs(output_state.delay_in_seconds as u64)),
+            TimerState::Oneshot(Duration::from_millis(
+                output_state.delay_in_milliseconds as u64,
+            )),
             SetTimeFlags::Default,
         );
         loop {
