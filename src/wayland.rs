@@ -138,7 +138,7 @@ impl DisplayOutput {
     }
 
     fn destroy(&self) {
-        log::debug!("Destroy output: `{}`", self.registry_name);
+        log::debug!("Destroy output `{}`", self.registry_name);
         if let Some(gamma_control) = &self.gamma_control {
             gamma_control.destroy();
         };
@@ -194,7 +194,7 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
                 if interface == WlOutput::interface().name {
                     let wl_output = registry.bind::<WlOutput, _, _>(name, version, qh, ());
                     state.outputs.push(DisplayOutput::new(name, wl_output));
-                    log::debug!("Bind output: `{}`", name);
+                    log::debug!("Bind output `{}`", name);
                 } else if interface == ZwlrGammaControlManagerV1::interface().name {
                     state.gamma_manager = Some(registry.bind::<ZwlrGammaControlManagerV1, _, _>(
                         name,
@@ -231,7 +231,7 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .iter_mut()
                 .find(|o| o.wl_output == *proxy)
                 .expect("Internal: Received event for unknown output");
-            log::debug!("New output: `{}`, name: `{}`", output.registry_name, name);
+            log::debug!("New output `{}`, named `{}`", output.registry_name, name);
             output.output_name = Some(name);
         }
     }
@@ -268,7 +268,7 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
                 let output = &mut state.outputs[index];
                 output.gamma_size = size as usize;
                 log::debug!(
-                    "New gamma control for output `{}`, gamma size: `{}`",
+                    "New gamma control for output `{}`, gamma size `{}`",
                     output.registry_name,
                     size
                 );

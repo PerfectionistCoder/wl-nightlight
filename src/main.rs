@@ -85,7 +85,7 @@ fn main() -> anyhow::Result<()> {
                 .expect("Internal: Time delta out of bound");
         log::info!(
             "Thread sleep until {} for next mode switch",
-            next_mode_switch.format("%Y-%m-%d %H:%M")
+            next_mode_switch.format("%Y-%m-%d %H:%M:%S")
         );
         thread::sleep(Duration::from_secs(output_state.delay_in_seconds as u64));
         output_state.next();
