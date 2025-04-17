@@ -58,6 +58,10 @@ impl Wayland {
         }
         event_queue.roundtrip(&mut state)?;
 
+        if state.outputs.is_empty() {
+            anyhow::bail!("No output found")
+        }
+
         Ok(Self {
             connection,
             state,
@@ -81,8 +85,8 @@ impl Wayland {
                     }
                 }
 
-                self.sender.send(Ok(()))?;
                 self.connection.flush()?;
+                self.sender.send(Ok(()))?;
             }
 
             Ok(())

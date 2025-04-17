@@ -210,7 +210,7 @@ fn get_next_mode_switch(
         mode = OutputMode::Night;
         until = day_time_provider.get_day_time(date.succ_opt().unwrap())
     }
-    (mode, (until - now).num_seconds())
+    (mode, (until - now).num_seconds() + 1)
 }
 
 #[cfg(test)]
