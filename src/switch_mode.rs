@@ -40,150 +40,126 @@ struct TimeProviderState {
     fixed_night_time: Option<NaiveTime>,
 }
 
-impl TimeProviderState {
-    fn set_coord(&mut self, latitude: f64, longitude: f64) -> anyhow::Result<()> {
-        self.coord = Some(Coordinates::new(latitude, longitude).ok_or(InternalError {
-            message: "Coordinates out of range",
-        })?);
-        Ok(())
-    }
+type TimeProviderType = fn(&TimeProviderState, NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>>;
+struct TimeProvider {
+    state: TimeProviderState,
+    day: TimeProviderType,
+    night: TimeProviderType,
 }
 
-trait TimeProvider: std::fmt::Display {
-    fn new(state: &TimeProviderState) -> anyhow::Result<Self>
-    where
-        Self: Sized;
-    fn get_day_time(&self, date: NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>>;
-    fn get_night_time(&self, date: NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>>;
-}
+impl TimeProvider {
+    fn new(switch_mode: SwitchMode, location: Option<Location>) -> anyhow::Result<Self> {
+        fn auto(
+            state: &TimeProviderState,
+            date: NaiveDate,
+            event: sunrise::SolarEvent,
+        ) -> anyhow::Result<DateTime<chrono::Utc>> {
+            Ok(
+                SolarDay::new(state.coord.ok_or(InternalError { message: "" })?, date)
+                    .event_time(event),
+            )
+        }
+        let auto_day =
+            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+                auto(state, date, Sunrise)
+            };
+        let auto_night =
+            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+                auto(state, date, Sunset)
+            };
+        fn fixed<T: Fn(&TimeProviderState) -> anyhow::Result<NaiveTime>>(
+            state: &TimeProviderState,
+            date: NaiveDate,
+            get_field: T,
+        ) -> anyhow::Result<DateTime<chrono::Utc>> {
+            Ok(NaiveDateTime::new(date, get_field(state)?)
+                .and_local_timezone(Local)
+                .unwrap()
+                .to_utc())
+        }
+        let fixed_day =
+            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+                fixed(state, date, |state| {
+                    state.fixed_day_time.ok_or(
+                        InternalError {
+                            message: "Fixed day time not set",
+                        }
+                        .into(),
+                    )
+                })
+            };
+        let fixed_night =
+            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+                fixed(state, date, |state| {
+                    state.fixed_night_time.ok_or(
+                        InternalError {
+                            message: "Fixed night time not set",
+                        }
+                        .into(),
+                    )
+                })
+            };
 
-struct AutoTimeProvider {
-    coord: Coordinates,
-}
+        let mut state = TimeProviderState::default();
+        match (&switch_mode.day, &switch_mode.night) {
+            (TimeProviderMode::Fixed(_), TimeProviderMode::Fixed(_)) => {}
+            _ => {
+                let location = location.ok_or(InternalError {
+                    message: "Location is not set",
+                })?;
+                state.coord = Some(
+                    Coordinates::new(location.latitude, location.longitude).ok_or(
+                        InternalError {
+                            message: "Coordinates are out of range",
+                        },
+                    )?,
+                )
+            }
+        }
+        let day = match switch_mode.day {
+            TimeProviderMode::Auto => auto_day,
+            TimeProviderMode::Fixed(time) => {
+                state.fixed_day_time = Some(time);
+                fixed_day
+            }
+        };
+        let night = match switch_mode.night {
+            TimeProviderMode::Auto => auto_night,
+            TimeProviderMode::Fixed(time) => {
+                state.fixed_night_time = Some(time);
+                fixed_night
+            }
+        };
 
-impl TimeProvider for AutoTimeProvider {
-    fn new(state: &TimeProviderState) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        let TimeProviderState { coord, .. } = *state;
-        Ok(Self {
-            coord: coord.ok_or(InternalError {
-                message: "Coordinates not set",
-            })?,
-        })
-    }
-    fn get_day_time(&self, date: NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>> {
-        Ok(SolarDay::new(self.coord, date).event_time(Sunrise))
-    }
-    fn get_night_time(&self, date: NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>> {
-        Ok(SolarDay::new(self.coord, date).event_time(Sunset))
-    }
-}
-
-impl std::fmt::Display for AutoTimeProvider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "auto")
-    }
-}
-
-struct FixedTimeProvider {
-    day_time: Option<NaiveTime>,
-    night_time: Option<NaiveTime>,
-}
-
-impl TimeProvider for FixedTimeProvider {
-    fn new(state: &TimeProviderState) -> anyhow::Result<Self>
-    where
-        Self: Sized,
-    {
-        let TimeProviderState {
-            fixed_day_time,
-            fixed_night_time,
-            ..
-        } = *state;
-        Ok(Self {
-            day_time: fixed_day_time,
-            night_time: fixed_night_time,
-        })
-    }
-    fn get_day_time(&self, date: NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>> {
-        Ok(NaiveDateTime::new(
-            date,
-            self.day_time.ok_or(InternalError {
-                message: "Fixed day time not set",
-            })?,
-        )
-        .and_local_timezone(Local)
-        .unwrap()
-        .to_utc())
-    }
-    fn get_night_time(&self, date: NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>> {
-        Ok(NaiveDateTime::new(
-            date,
-            self.night_time.ok_or(InternalError {
-                message: "Fixed night time not set",
-            })?,
-        )
-        .and_local_timezone(Local)
-        .unwrap()
-        .to_utc())
-    }
-}
-
-impl std::fmt::Display for FixedTimeProvider {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "fixed")
+        Ok(Self { state, day, night })
     }
 }
 
 pub struct OutputState {
     pub mode: OutputMode,
     pub delay_in_milliseconds: i64,
-    day_time_provider: Box<dyn TimeProvider>,
-    night_time_provider: Box<dyn TimeProvider>,
+    time_provider: TimeProvider,
 }
 
 impl OutputState {
     pub fn new(switch_mode: SwitchMode, location: Option<Location>) -> anyhow::Result<Self> {
-        let mut state = TimeProviderState::default();
-
-        if let Some(location) = location {
-            state.set_coord(location.latitude, location.longitude)?;
-        }
-
-        state.fixed_day_time = match switch_mode.day {
-            TimeProviderMode::Fixed(time) => Some(time),
-            _ => None,
-        };
-        state.fixed_night_time = match switch_mode.night {
-            TimeProviderMode::Fixed(time) => Some(time),
-            _ => None,
-        };
-
-        let day_time_provider: Box<dyn TimeProvider> = match switch_mode.day {
-            TimeProviderMode::Auto => Box::new(AutoTimeProvider::new(&state)?),
-            TimeProviderMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)?),
-        };
-        let night_time_provider: Box<dyn TimeProvider> = match switch_mode.night {
-            TimeProviderMode::Auto => Box::new(AutoTimeProvider::new(&state)?),
-            TimeProviderMode::Fixed(_) => Box::new(FixedTimeProvider::new(&state)?),
-        };
-
+        let time_provider = TimeProvider::new(switch_mode, location)?;
         let (mode, delay_in_milliseconds) =
-            get_next_mode_switch(&*day_time_provider, &*night_time_provider)?;
+            get_next_mode_switch(&time_provider.state, time_provider.day, time_provider.night)?;
 
         Ok(Self {
             mode,
             delay_in_milliseconds,
-            day_time_provider,
-            night_time_provider,
+            time_provider,
         })
     }
 
     pub fn next(&mut self) -> anyhow::Result<()> {
-        let (mode, delay_in_milliseconds) =
-            get_next_mode_switch(&*self.day_time_provider, &*self.night_time_provider)?;
+        let (mode, delay_in_milliseconds) = get_next_mode_switch(
+            &self.time_provider.state,
+            self.time_provider.day,
+            self.time_provider.night,
+        )?;
         self.mode = mode;
         self.delay_in_milliseconds = delay_in_milliseconds;
         Ok(())
@@ -191,22 +167,21 @@ impl OutputState {
 }
 
 fn get_next_mode_switch(
-    day_time_provider: &dyn TimeProvider,
-    night_time_provider: &dyn TimeProvider,
+    state: &TimeProviderState,
+    day_time_provider: TimeProviderType,
+    night_time_provider: TimeProviderType,
 ) -> anyhow::Result<(OutputMode, i64)> {
     let date = Local::now().date_naive();
     let now = Utc::now();
 
-    let day_time = day_time_provider.get_day_time(date)?;
-    let night_time = night_time_provider.get_night_time(date)?;
+    let day_time = (day_time_provider)(state, date)?;
+    let night_time = (night_time_provider)(state, date)?;
 
     if day_time > night_time {
         log::error!(
-            "[switch-mode.day] `{}` ({}) is greater than [switch-mode.night] `{}` ({})",
+            "[switch-mode.day] `{}` is greater than [switch-mode.night] `{}`",
             day_time.with_timezone(&Local).format("%H:%M"),
-            day_time_provider,
             night_time.with_timezone(&Local).format("%H:%M"),
-            night_time_provider
         );
     }
 
@@ -220,7 +195,7 @@ fn get_next_mode_switch(
         until = night_time;
     } else {
         mode = OutputMode::Night;
-        until = day_time_provider.get_day_time(date.succ_opt().unwrap())?
+        until = (day_time_provider)(state, date.succ_opt().unwrap())?
     }
     Ok((mode, (until - now).num_milliseconds() + 1))
 }
@@ -475,6 +450,7 @@ mod mock_chrono {
         static DATE: Cell<Option<DateTime<chrono::FixedOffset>>> = const { Cell::new(None) };
     }
 
+    #[derive(Clone)]
     pub struct Utc;
 
     impl Utc {
