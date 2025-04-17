@@ -15,7 +15,10 @@ use wayland_protocols_wlr::gamma_control::v1::client::{
     zwlr_gamma_control_v1::{self, ZwlrGammaControlV1},
 };
 
-use crate::color::{Color, fill_color_ramp};
+use crate::{
+    InternalError,
+    color::{Color, fill_color_ramp},
+};
 
 pub enum WaylandRequest {
     ChangeOutputColor(Color),
@@ -94,7 +97,7 @@ impl Wayland {
 
         self.sender
             .send(result)
-            .expect("Internal: Main thread receiver dropped unexpectedly");
+            .expect("Main thread receiver dropped");
     }
 }
 
@@ -135,12 +138,6 @@ impl DisplayOutput {
         }
     }
 
-    fn try_get_gamma_control(&self) -> &ZwlrGammaControlV1 {
-        self.gamma_control
-            .as_ref()
-            .expect("Internal: No gamma control for output")
-    }
-
     fn destroy(&self) {
         log::debug!("Destroy output `{}`", self.registry_name);
         if let Some(gamma_control) = &self.gamma_control {
@@ -165,7 +162,12 @@ impl DisplayOutput {
         let (r, rest) = buf.split_at_mut(self.gamma_size);
         let (g, b) = rest.split_at_mut(self.gamma_size);
         fill_color_ramp(r, g, b, self.gamma_size, self.color);
-        self.try_get_gamma_control().set_gamma(file.as_fd());
+        self.gamma_control
+            .as_ref()
+            .ok_or(InternalError {
+                message: "No gamma control for output",
+            })?
+            .set_gamma(file.as_fd());
 
         Ok(())
     }
@@ -234,7 +236,7 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .outputs
                 .iter_mut()
                 .find(|o| o.wl_output == *proxy)
-                .expect("Internal: Received event for unknown output");
+                .expect("Received event for unknown output");
             log::debug!("New output `{}`, named `{}`", output.registry_name, name);
             output.output_name = Some(name);
         }
@@ -265,8 +267,8 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
         let index = state
             .outputs
             .iter()
-            .position(|o| o.try_get_gamma_control() == proxy)
-            .expect("Internal: Received event for unknown input");
+            .position(|o| o.gamma_control.as_ref().is_some_and(|g| g == proxy))
+            .expect("Received event for unknown input");
         match event {
             zwlr_gamma_control_v1::Event::GammaSize { size } => {
                 let output = &mut state.outputs[index];

@@ -141,11 +141,10 @@ impl RawConfig {
             })
         }
 
-        fn parse_time_mode(time: &str) -> TimeProviderMode {
-            TimeProviderMode::Fixed(
-                NaiveTime::parse_from_str(time, "%H:%M")
-                    .expect("Internal: Naive time parse from string failed"),
-            )
+        fn parse_time_mode(time: &str) -> anyhow::Result<TimeProviderMode> {
+            Ok(TimeProviderMode::Fixed(NaiveTime::parse_from_str(
+                time, "%H:%M",
+            )?))
         }
 
         let day_color = fill_color(self.day);
@@ -159,12 +158,11 @@ impl RawConfig {
                 night_mode = TimeProviderMode::Auto;
             }
             Some(switch_mode) => {
-                day_mode = switch_mode
-                    .day
-                    .map_or(TimeProviderMode::Auto, |time| parse_time_mode(&time));
-                night_mode = switch_mode
-                    .night
-                    .map_or(TimeProviderMode::Auto, |time| parse_time_mode(&time));
+                fn fill(mode_time: Option<String>) -> anyhow::Result<TimeProviderMode> {
+                    mode_time.map_or(Ok(TimeProviderMode::Auto), |time| parse_time_mode(&time))
+                }
+                day_mode = fill(switch_mode.day)?;
+                night_mode = fill(switch_mode.night)?;
             }
         }
 

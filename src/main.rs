@@ -13,6 +13,7 @@ use std::{
     thread,
     time::Duration,
 };
+use thiserror::Error;
 use timerfd::{SetTimeFlags, TimerFd, TimerState};
 
 use config::RawConfig;
@@ -33,6 +34,12 @@ struct Cli {
     /// Turn off all logs
     #[arg(short, long)]
     quite: bool,
+}
+
+#[derive(Error, Debug)]
+#[error("Internal: {message}")]
+pub struct InternalError<'a> {
+    message: &'a str,
 }
 
 fn main() -> anyhow::Result<()> {
@@ -64,11 +71,9 @@ fn main() -> anyhow::Result<()> {
             p.push("config.toml");
             p
         }))
-        .ok_or_else(|| anyhow::anyhow!("Do not know where to look for a config file"))?;
-    let content = &read_to_string(&path).map_err(|err| match err.kind() {
-        std::io::ErrorKind::NotFound => anyhow::anyhow!("File {:?} not found", &path),
-        other => anyhow::anyhow!("Fail to read file {:?}, {:?}", &path, other),
-    })?;
+        .ok_or_else(|| anyhow::anyhow!("Unable to locate config file"))?;
+    let content = &read_to_string(&path)
+        .map_err(|err| anyhow::anyhow!("Fail to read file {:?}, {:?}", &path, err.kind()))?;
     let config = RawConfig::read(content)?.check()?;
 
     let (request_sender, request_receiver) = channel();
@@ -79,7 +84,7 @@ fn main() -> anyhow::Result<()> {
         wayland.process_requests();
     });
 
-    let mut output_state = OutputState::new(config.switch_mode, config.location);
+    let mut output_state = OutputState::new(config.switch_mode, config.location)?;
     let mut timerfd = TimerFd::new_custom(timerfd::ClockId::Boottime, false, false)?;
     let mut poll_array = [libc::pollfd {
         fd: timerfd.as_fd().as_raw_fd(),
@@ -89,19 +94,22 @@ fn main() -> anyhow::Result<()> {
 
     loop {
         log::info!("Enter {} mode", output_state.mode);
+
         request_sender.send(WaylandRequest::ChangeOutputColor(match output_state.mode {
             OutputMode::Day => config.day,
             OutputMode::Night => config.night,
         }))?;
         wayland_receiver.recv()??;
 
-        let next_mode_switch = Local::now()
-            + TimeDelta::new(output_state.delay_in_seconds, 0)
-                .expect("Internal: Time delta out of bound");
         log::info!(
-            "Thread sleep until {} for next mode switch",
-            next_mode_switch.format("%Y-%m-%d %H:%M")
+            "Next mode switch at {}",
+            (Local::now()
+                + TimeDelta::new(output_state.delay_in_seconds, 0).ok_or(InternalError {
+                    message: "Time delta out of bound",
+                })?)
+            .format("%Y-%m-%d %H:%M")
         );
+
         timerfd.set_state(
             TimerState::Oneshot(Duration::from_secs(output_state.delay_in_seconds as u64)),
             SetTimeFlags::Default,
@@ -116,6 +124,6 @@ fn main() -> anyhow::Result<()> {
             }
             break;
         }
-        output_state.next();
+        output_state.next()?;
     }
 }
