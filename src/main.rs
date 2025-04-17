@@ -5,7 +5,15 @@ mod wayland;
 
 use chrono::{Local, TimeDelta};
 use clap::Parser;
-use std::{fs::read_to_string, path::PathBuf, sync::mpsc::channel, thread, time::Duration};
+use std::{
+    fs::read_to_string,
+    os::fd::{AsFd, AsRawFd},
+    path::PathBuf,
+    sync::mpsc::channel,
+    thread,
+    time::Duration,
+};
+use timerfd::{SetTimeFlags, TimerFd, TimerState};
 
 use config::RawConfig;
 use log::LevelFilter;
@@ -72,6 +80,13 @@ fn main() -> anyhow::Result<()> {
     });
 
     let mut output_state = OutputState::new(config.switch_mode, config.location);
+    let mut timerfd = TimerFd::new_custom(timerfd::ClockId::Boottime, false, false)?;
+    let mut poll_array = [libc::pollfd {
+        fd: timerfd.as_fd().as_raw_fd(),
+        events: libc::POLLIN,
+        revents: 0,
+    }];
+
     loop {
         log::info!("Enter {} mode", output_state.mode);
         request_sender.send(WaylandRequest::ChangeOutputColor(match output_state.mode {
@@ -85,9 +100,22 @@ fn main() -> anyhow::Result<()> {
                 .expect("Internal: Time delta out of bound");
         log::info!(
             "Thread sleep until {} for next mode switch",
-            next_mode_switch.format("%Y-%m-%d %H:%M:%S")
+            next_mode_switch.format("%Y-%m-%d %H:%M")
         );
-        thread::sleep(Duration::from_secs(output_state.delay_in_seconds as u64));
+        timerfd.set_state(
+            TimerState::Oneshot(Duration::from_secs(output_state.delay_in_seconds as u64)),
+            SetTimeFlags::Default,
+        );
+        loop {
+            if unsafe { libc::poll(poll_array.as_mut_ptr(), poll_array.len() as _, -1) } == -1 {
+                let err = std::io::Error::last_os_error();
+                if err.kind() == std::io::ErrorKind::Interrupted {
+                    continue;
+                }
+                Err(err)?;
+            }
+            break;
+        }
         output_state.next();
     }
 }

@@ -540,9 +540,9 @@ checksum = "bbd2bcb4c963f2ddae06a2efc7e9f3591312473c50c6685e1f298068316e66fe"
 
 [[package]]
 name = "libc"
-version = "0.2.171"
+version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c19937216e9d3aa9956d9bb8dfc0b0c8beb6058fc4f7a4dc4d850edf86a237d6"
+checksum = "d750af042f7ef4f724306de029d18836c26c1765a54a6a3f094cbd23a7267ffa"
 
 [[package]]
 name = "libredox"
@@ -923,6 +923,15 @@ checksum = "3526739392ec93fd8b359c8e98514cb3e8e021beb4e5f597b00a0221f8ed8a49"
 dependencies = [
  "num-conv",
  "time-core",
+]
+
+[[package]]
+name = "timerfd"
+version = "1.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "84e482e368cf7efa2c8b570f476e5b9fd9fd5e9b9219fc567832b05f13511091"
+dependencies = [
+ "rustix",
 ]
 
 [[package]]
@@ -1384,6 +1393,7 @@ dependencies = [
  "chrono",
  "clap",
  "dirs",
+ "libc",
  "log",
  "memmap2",
  "serde",
@@ -1392,6 +1402,7 @@ dependencies = [
  "sunrise",
  "thiserror",
  "time",
+ "timerfd",
  "toml",
  "validator",
  "wayland-client",
