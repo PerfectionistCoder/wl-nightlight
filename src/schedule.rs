@@ -143,25 +143,25 @@ fn get_next_schedule(
     let date = Local::now().date_naive();
     let now = Utc::now();
 
-    let day_time = day_scheduler.get(date);
-    let night_time = night_scheduler.get(date);
+    let day_date_time = day_scheduler.get(date);
+    let night_date_time = night_scheduler.get(date);
 
-    if day_time > night_time {
+    if day_date_time > night_date_time {
         log::error!(
-            "`schedule.day` {} is greater than `schedule.night` {}",
-            day_time.with_timezone(&Local).format("%H:%M"),
-            night_time.with_timezone(&Local).format("%H:%M"),
+            "`schedule.day` ({}) occurs after `schedule.night` ({})",
+            day_date_time.with_timezone(&Local).format("%H:%M"),
+            night_date_time.with_timezone(&Local).format("%H:%M"),
         );
     }
 
     let mode: ColorMode;
     let until: DateTime<chrono::Utc>;
-    if now < day_time {
+    if now < day_date_time {
         mode = ColorMode::Night;
-        until = day_time;
-    } else if now < night_time {
+        until = day_date_time;
+    } else if now < night_date_time {
         mode = ColorMode::Day;
-        until = night_time;
+        until = night_date_time;
     } else {
         mode = ColorMode::Night;
         until = day_scheduler.get(date.succ_opt().unwrap());

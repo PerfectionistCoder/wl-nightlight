@@ -554,26 +554,52 @@ mod test {
             ));
         }
 
-        #[test]
-        fn invalid_time() {
-            let file = "
+        mod invalid_time {
+            use super::*;
+
+            #[test]
+            fn fixed_time() {
+                let file = "
                 [schedule]
                 day = \"25:00\"                
                 night = \"00:61\"
             ";
 
-            assert!(matches!(
-                RawConfig::read(file).unwrap().check(),
-                Err(err) if matches!(
-                    err.downcast_ref::<ConfigError>(),
-                    Some(ConfigError::ValidationError(ValidationErrors(map)))
-                        if matches!(
-                         map.get("schedule"),
-                         Some(ValidationErrorsKind::Struct(errs))
-                          if errs.errors().contains_key("day") && errs.errors().contains_key("night")
-                        )
-                )
-            ));
+                assert!(matches!(
+                    RawConfig::read(file).unwrap().check(),
+                    Err(err) if matches!(
+                        err.downcast_ref::<ConfigError>(),
+                        Some(ConfigError::ValidationError(ValidationErrors(map)))
+                            if matches!(
+                             map.get("schedule"),
+                             Some(ValidationErrorsKind::Struct(errs))
+                              if errs.errors().contains_key("day") && errs.errors().contains_key("night")
+                            )
+                    )
+                ));
+            }
+
+            #[test]
+            fn relative_time() {
+                let file = "
+                [schedule]
+                day = \"+25:00\"                
+                night = \"-00:61\"
+            ";
+
+                assert!(matches!(
+                    RawConfig::read(file).unwrap().check(),
+                    Err(err) if matches!(
+                        err.downcast_ref::<ConfigError>(),
+                        Some(ConfigError::ValidationError(ValidationErrors(map)))
+                            if matches!(
+                             map.get("schedule"),
+                             Some(ValidationErrorsKind::Struct(errs))
+                              if errs.errors().contains_key("day") && errs.errors().contains_key("night")
+                            )
+                    )
+                ));
+            }
         }
     }
 }
