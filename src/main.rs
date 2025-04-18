@@ -123,6 +123,6 @@ fn main() -> anyhow::Result<()> {
             }
             break;
         }
-        mode_scheduler.next()?;
+        mode_scheduler.next();
     }
 }
