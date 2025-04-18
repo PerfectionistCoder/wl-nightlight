@@ -1,29 +1,8 @@
-# Display Color setting in `day` mode
-# Values below are the defaults
-[day]
-# temperature = 6500 # accepts integer between [1K, 10K]
-# gamma = 1.0 # accepts positive decimals
-# brightness = 1.0 # accepts positive decimals
-# inverted = false
-
-# Display Color setting in `night` mode
-# Same keys and defaults as [day]
 [night]
-temperature = 5500 # specify a value to override the default
 brightness = 0.8
 
-# Must be specified when either [switch-mode.day] or [switch-mode.night] is unset
 [location]
-latitude = 51.0
+latitude = 51.8
 longitude = -0.1
 
-# Your display will use `night` mode before [switch-mode.day],
-# use `day` mode during the time between [switch-mode.day] and [switch-mode.night],
-# and use `night` mode after [switch-mode.night]
-[switch-mode]
-# Defaults to `auto` if unset, using your geolocation to calculte the sunrise/sunset time,
-# requires [location]
-# day = "08:00" # specify a time in 24-hour time format HH:MM to set it to a `fixed` time
-#
-# `auto` and `fixed` can be mixed
-# The above config means use `day` mode after 8am and use `night` mode after sunset
+[schedule]

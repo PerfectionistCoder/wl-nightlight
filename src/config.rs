@@ -1,7 +1,4 @@
-use std::{
-    fmt::{self, Display},
-    ops::Deref,
-};
+use std::fmt::{self, Display};
 
 use chrono::{NaiveTime, TimeDelta, Timelike};
 use serde::Deserialize;
@@ -30,31 +27,33 @@ pub struct Location {
     pub longitude: f64,
 }
 
-fn parse_time_mode(time: &str) -> anyhow::Result<TimeProviderMode> {
-    let first_char = time.chars().next();
+fn parse_schedule(time_str: &str) -> Result<ScheduleType, ValidationError> {
+    let first_char = time_str.chars().next();
     Ok(match first_char {
         Some(c) if c == '+' || c == '-' => {
             let sign = if first_char == Some('+') { 1 } else { -1 };
-            let time = NaiveTime::parse_from_str(&time[1..], "%H:%M")?;
-            TimeProviderMode::Relative(
-                TimeDelta::hours(time.hour() as i64 * sign)
-                    + TimeDelta::minutes(time.minute() as i64 * sign),
-            )
+            let naive_time = NaiveTime::parse_from_str(&time_str[1..], "%H:%M")
+                .map_err(|_| ValidationError::new("relative_time"))?;
+            let time_delta = (TimeDelta::hours(naive_time.hour() as i64)
+                + TimeDelta::minutes(naive_time.minute() as i64))
+                * sign;
+            ScheduleType::Relative(time_delta)
         }
-        _ => TimeProviderMode::Fixed(NaiveTime::parse_from_str(time, "%H:%M")?),
+        _ => ScheduleType::Fixed(
+            NaiveTime::parse_from_str(time_str, "%H:%M")
+                .map_err(|_| ValidationError::new("fixed_time"))?,
+        ),
     })
 }
-fn validate_switch_mode(time: &str) -> Result<(), ValidationError> {
-    parse_time_mode(time)
-        .map(|_| ())
-        .map_err(|_| ValidationError::new("time"))
+fn validate_schedule(time_str: &str) -> Result<(), ValidationError> {
+    parse_schedule(time_str).map(|_| ())
 }
 
 #[derive(Deserialize, Debug, Validate)]
-pub struct SwitchModeConfig {
-    #[validate(custom(function = "validate_switch_mode"))]
+pub struct ScheduleConfig {
+    #[validate(custom(function = "validate_schedule"))]
     day: Option<String>,
-    #[validate(custom(function = "validate_switch_mode"))]
+    #[validate(custom(function = "validate_schedule"))]
     night: Option<String>,
 }
 
@@ -69,14 +68,14 @@ pub struct RawConfig {
     #[validate(nested)]
     location: Option<Location>,
     #[validate(nested)]
-    switch_mode: Option<SwitchModeConfig>,
+    schedule: Option<ScheduleConfig>,
 }
 
 #[derive(Error, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
 enum ConfigError {
-    Invalid(ValidationErrors),
-    MissingLocation,
+    ValidationError(ValidationErrors),
+    LocationError,
 }
 
 #[cfg(not(tarpaulin_include))]
@@ -89,7 +88,7 @@ impl Display for ConfigError {
         ) -> fmt::Result {
             for (field, error_kind) in &errors.0 {
                 let field_path = if path_prefix.is_empty() {
-                    String::from("[") + field
+                    field.to_string()
                 } else {
                     format!("{}.{}", path_prefix, field)
                 };
@@ -97,15 +96,28 @@ impl Display for ConfigError {
                 match error_kind {
                     ValidationErrorsKind::Field(errors) => {
                         for error in errors {
-                            let detail = match error.code.deref() {
-                                "range" => format!(
-                                    "is not in range [{}, {}]",
-                                    error.params["min"], error.params["max"]
-                                ),
-                                "time" => "is not in format `HH:MM`".to_string(),
-                                _ => format!("{}", error),
+                            let message = match &*error.code {
+                                "range"
+                                    if error.params.contains_key("max")
+                                        && error.params.contains_key("min") =>
+                                {
+                                    format!(
+                                        "in range {}-{}",
+                                        error.params["min"], error.params["max"]
+                                    )
+                                }
+                                "range" if error.params.contains_key("min") => {
+                                    format!("greater than {}", error.params["min"])
+                                }
+                                "fixed_time" => "in format 'HH:MM'".to_string(),
+                                "relative_time" => "in format '+HH:MM' or '-HH:MM'".to_string(),
+                                _ => return Err(std::fmt::Error),
                             };
-                            writeln!(f, "{}] {}", field_path, detail)?;
+                            writeln!(
+                                f,
+                                "value {} in field `{}` is not {}",
+                                error.params["value"], field_path, message
+                            )?;
                         }
                     }
                     ValidationErrorsKind::Struct(nested_errors) => {
@@ -123,10 +135,10 @@ impl Display for ConfigError {
         }
 
         match self {
-            Self::Invalid(v_e) => print_errors(v_e, f, String::new()),
-            Self::MissingLocation => writeln!(
+            Self::ValidationError(v_e) => print_errors(v_e, f, String::new()),
+            Self::LocationError => writeln!(
                 f,
-                "[location] is required when [switch-mode.day] or [switch-mode.night] is unset"
+                "[location] is required when [schedule.day] or [schedule.night] is unset"
             ),
         }
     }
@@ -139,13 +151,13 @@ impl RawConfig {
 
     pub fn check(self) -> anyhow::Result<Config> {
         self.validate()
-            .map_err(ConfigError::Invalid)
+            .map_err(ConfigError::ValidationError)
             .map(|_| self)?
             .parse()
     }
 
     fn parse(self) -> anyhow::Result<Config> {
-        fn fill_color(color: Option<ColorConfig>) -> Color {
+        fn apply_default_color(color: Option<ColorConfig>) -> Color {
             let default = Color::default();
             color.map_or(default, |c| Color {
                 temperature: c.temperature.unwrap_or(default.temperature),
@@ -155,36 +167,40 @@ impl RawConfig {
             })
         }
 
-        let day_color = fill_color(self.day);
-        let night_color = fill_color(self.night);
+        let day_color = apply_default_color(self.day);
+        let night_color = apply_default_color(self.night);
 
-        let day_mode: TimeProviderMode;
-        let night_mode: TimeProviderMode;
-        match self.switch_mode {
+        let day_type: ScheduleType;
+        let night_type: ScheduleType;
+        match self.schedule {
             None => {
-                day_mode = TimeProviderMode::Auto;
-                night_mode = TimeProviderMode::Auto;
+                day_type = ScheduleType::Auto;
+                night_type = ScheduleType::Auto;
             }
-            Some(switch_mode) => {
-                fn fill(mode_time: Option<String>) -> anyhow::Result<TimeProviderMode> {
-                    mode_time.map_or(Ok(TimeProviderMode::Auto), |time| parse_time_mode(&time))
+            Some(schedule) => {
+                fn resolve_schedule_str(
+                    schedule_str: Option<String>,
+                ) -> anyhow::Result<ScheduleType> {
+                    schedule_str.map_or(Ok(ScheduleType::Auto), |time_str| {
+                        Ok(parse_schedule(&time_str)?)
+                    })
                 }
-                day_mode = fill(switch_mode.day)?;
-                night_mode = fill(switch_mode.night)?;
+                day_type = resolve_schedule_str(schedule.day)?;
+                night_type = resolve_schedule_str(schedule.night)?;
             }
         }
 
-        if !(day_mode.is_fixed() && night_mode.is_fixed()) && self.location.is_none() {
-            Err(ConfigError::MissingLocation)?
+        if !(day_type.is_fixed() && night_type.is_fixed()) && self.location.is_none() {
+            Err(ConfigError::LocationError)?
         }
 
         Ok(Config {
             day: day_color,
             night: night_color,
             location: self.location,
-            switch_mode: SwitchMode {
-                day: day_mode,
-                night: night_mode,
+            schedule: Schedule {
+                day: day_type,
+                night: night_type,
             },
         })
     }
@@ -192,13 +208,13 @@ impl RawConfig {
 
 #[derive(PartialEq, Eq)]
 #[cfg_attr(test, derive(Debug))]
-pub enum TimeProviderMode {
+pub enum ScheduleType {
     Auto,
     Fixed(NaiveTime),
     Relative(TimeDelta),
 }
 
-impl TimeProviderMode {
+impl ScheduleType {
     fn is_fixed(&self) -> bool {
         if let Self::Fixed(_) = self {
             return true;
@@ -208,9 +224,9 @@ impl TimeProviderMode {
 }
 
 #[cfg_attr(test, derive(Debug))]
-pub struct SwitchMode {
-    pub day: TimeProviderMode,
-    pub night: TimeProviderMode,
+pub struct Schedule {
+    pub day: ScheduleType,
+    pub night: ScheduleType,
 }
 
 #[cfg_attr(test, derive(Debug))]
@@ -218,7 +234,7 @@ pub struct Config {
     pub day: Color,
     pub night: Color,
     pub location: Option<Location>,
-    pub switch_mode: SwitchMode,
+    pub schedule: Schedule,
 }
 
 #[cfg(test)]
@@ -229,7 +245,7 @@ mod test {
 
     use super::*;
 
-    fn cmp_err<T>(result: anyhow::Result<T>, error: ConfigError) {
+    fn assert_same_error<T>(result: anyhow::Result<T>, error: ConfigError) {
         if let Err(err) = result {
             assert_eq!(err.downcast::<ConfigError>().unwrap(), error)
         } else {
@@ -254,8 +270,8 @@ mod test {
                 longitude: 0.0
             })
         );
-        assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
-        assert_eq!(config.switch_mode.night, TimeProviderMode::Auto);
+        assert_eq!(config.schedule.day, ScheduleType::Auto);
+        assert_eq!(config.schedule.night, ScheduleType::Auto);
     }
 
     #[test]
@@ -298,40 +314,40 @@ mod test {
         #[test]
         fn day_night_auto() {
             let file = "";
-            cmp_err(
+            assert_same_error(
                 RawConfig::read(file).unwrap().check(),
-                ConfigError::MissingLocation,
+                ConfigError::LocationError,
             );
         }
 
         #[test]
         fn day_auto_night_fixed() {
             let file = "
-                [switch-mode]
+                [schedule]
                 night = \"00:00\"
             ";
-            cmp_err(
+            assert_same_error(
                 RawConfig::read(file).unwrap().check(),
-                ConfigError::MissingLocation,
+                ConfigError::LocationError,
             );
         }
 
         #[test]
         fn day_fixed_night_auto() {
             let file = "
-                [switch-mode]
+                [schedule]
                 day = \"00:00\"
             ";
-            cmp_err(
+            assert_same_error(
                 RawConfig::read(file).unwrap().check(),
-                ConfigError::MissingLocation,
+                ConfigError::LocationError,
             );
         }
 
         #[test]
         fn day_night_fixed() {
             let file = "
-                [switch-mode]
+                [schedule]
                 day = \"00:00\"
                 night = \"00:00\"
             ";
@@ -341,38 +357,38 @@ mod test {
         #[test]
         fn day_auto_night_relative() {
             let file = "
-                [switch-mode]
+                [schedule]
                 night = \"+01:00\"
             ";
-            cmp_err(
+            assert_same_error(
                 RawConfig::read(file).unwrap().check(),
-                ConfigError::MissingLocation,
+                ConfigError::LocationError,
             );
         }
 
         #[test]
         fn day_relative_night_fixed() {
             let file = "
-                [switch-mode]
+                [schedule]
                 day = \"-01:00\"
                 night = \"19:00\"
             ";
-            cmp_err(
+            assert_same_error(
                 RawConfig::read(file).unwrap().check(),
-                ConfigError::MissingLocation,
+                ConfigError::LocationError,
             );
         }
 
         #[test]
         fn day_night_relative() {
             let file = "
-                [switch-mode]
+                [schedule]
                 day = \"+02:00\"
                 night = \"+02:00\"
             ";
-            cmp_err(
+            assert_same_error(
                 RawConfig::read(file).unwrap().check(),
-                ConfigError::MissingLocation,
+                ConfigError::LocationError,
             );
         }
     }
@@ -389,7 +405,7 @@ mod test {
             RawConfig::read(file).unwrap().check(),
             Err(err) if matches!(
                 err.downcast_ref::<ConfigError>(),
-                Some(ConfigError::Invalid(ValidationErrors(map)))
+                Some(ConfigError::ValidationError(ValidationErrors(map)))
                     if matches!(
                         map.get("location"),
                         Some(ValidationErrorsKind::Struct(errs))
@@ -411,7 +427,7 @@ mod test {
             RawConfig::read(file).unwrap().check(),
             Err(err) if matches!(
                 err.downcast_ref::<ConfigError>(),
-                Some(ConfigError::Invalid(ValidationErrors(map)))
+                Some(ConfigError::ValidationError(ValidationErrors(map)))
                     if matches!(
                         map.get("location"),
                         Some(ValidationErrorsKind::Struct(errs))
@@ -443,14 +459,14 @@ mod test {
                     latitude = 0
                     longitude = 0
 
-                    [switch-mode]
+                    [schedule]
                     night = \"19:30\"
                 ";
             let config = RawConfig::read(file).unwrap().check().unwrap();
-            assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
+            assert_eq!(config.schedule.day, ScheduleType::Auto);
             assert_eq!(
-                config.switch_mode.night,
-                TimeProviderMode::Fixed(NaiveTime::from_hms_opt(19, 30, 0).unwrap())
+                config.schedule.night,
+                ScheduleType::Fixed(NaiveTime::from_hms_opt(19, 30, 0).unwrap())
             );
         }
 
@@ -461,15 +477,15 @@ mod test {
                     latitude = 0
                     longitude = 0
 
-                    [switch-mode]
+                    [schedule]
                     day = \"08:30\"
                 ";
             let config = RawConfig::read(file).unwrap().check().unwrap();
             assert_eq!(
-                config.switch_mode.day,
-                TimeProviderMode::Fixed(NaiveTime::from_hms_opt(8, 30, 0).unwrap())
+                config.schedule.day,
+                ScheduleType::Fixed(NaiveTime::from_hms_opt(8, 30, 0).unwrap())
             );
-            assert_eq!(config.switch_mode.night, TimeProviderMode::Auto);
+            assert_eq!(config.schedule.night, ScheduleType::Auto);
         }
 
         #[test]
@@ -479,14 +495,14 @@ mod test {
                     latitude = 0
                     longitude = 0
 
-                    [switch-mode]
+                    [schedule]
                     night = \"-00:30\"
                 ";
             let config = RawConfig::read(file).unwrap().check().unwrap();
-            assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
+            assert_eq!(config.schedule.day, ScheduleType::Auto);
             assert_eq!(
-                config.switch_mode.night,
-                TimeProviderMode::Relative(-TimeDelta::minutes(30))
+                config.schedule.night,
+                ScheduleType::Relative(-TimeDelta::minutes(30))
             );
         }
 
@@ -497,18 +513,18 @@ mod test {
                     latitude = 0
                     longitude = 0
 
-                    [switch-mode]
+                    [schedule]
                     day = \"09:00\"
                     night = \"+00:00\"
                 ";
             let config = RawConfig::read(file).unwrap().check().unwrap();
             assert_eq!(
-                config.switch_mode.day,
-                TimeProviderMode::Fixed(NaiveTime::from_hms_opt(9, 0, 0).unwrap())
+                config.schedule.day,
+                ScheduleType::Fixed(NaiveTime::from_hms_opt(9, 0, 0).unwrap())
             );
             assert_eq!(
-                config.switch_mode.night,
-                TimeProviderMode::Relative(TimeDelta::seconds(0))
+                config.schedule.night,
+                ScheduleType::Relative(TimeDelta::seconds(0))
             );
         }
     }
@@ -519,7 +535,7 @@ mod test {
         #[test]
         fn random_string() {
             let file = "
-                [switch-mode]
+                [schedule]
                 day = \"foo\"                
                 night = \"bar\"
             ";
@@ -528,9 +544,9 @@ mod test {
                 RawConfig::read(file).unwrap().check(),
                 Err(err) if matches!(
                     err.downcast_ref::<ConfigError>(),
-                    Some(ConfigError::Invalid(ValidationErrors(map)))
+                    Some(ConfigError::ValidationError(ValidationErrors(map)))
                         if matches!(
-                         map.get("switch_mode"),
+                         map.get("schedule"),
                          Some(ValidationErrorsKind::Struct(errs))
                           if errs.errors().contains_key("day") && errs.errors().contains_key("night")
                         )
@@ -541,7 +557,7 @@ mod test {
         #[test]
         fn invalid_time() {
             let file = "
-                [switch-mode]
+                [schedule]
                 day = \"25:00\"                
                 night = \"00:61\"
             ";
@@ -550,9 +566,9 @@ mod test {
                 RawConfig::read(file).unwrap().check(),
                 Err(err) if matches!(
                     err.downcast_ref::<ConfigError>(),
-                    Some(ConfigError::Invalid(ValidationErrors(map)))
+                    Some(ConfigError::ValidationError(ValidationErrors(map)))
                         if matches!(
-                         map.get("switch_mode"),
+                         map.get("schedule"),
                          Some(ValidationErrorsKind::Struct(errs))
                           if errs.errors().contains_key("day") && errs.errors().contains_key("night")
                         )

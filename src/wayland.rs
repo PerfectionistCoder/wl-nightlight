@@ -108,7 +108,7 @@ impl Wayland {
 
 #[cfg_attr(test, derive(Debug))]
 struct WaylandState {
-    outputs: Vec<DisplayOutput>,
+    outputs: Vec<OutputDevice>,
     gamma_manager: Option<ZwlrGammaControlManagerV1>,
 }
 
@@ -122,21 +122,21 @@ impl WaylandState {
 }
 
 #[cfg_attr(test, derive(Debug))]
-struct DisplayOutput {
+struct OutputDevice {
     registry_name: u32,
     wl_output: WlOutput,
-    output_name: Option<String>,
+    device_name: Option<String>,
     gamma_control: Option<ZwlrGammaControlV1>,
     gamma_size: usize,
     color: Color,
 }
 
-impl DisplayOutput {
+impl OutputDevice {
     fn new(registry_name: u32, wl_output: WlOutput) -> Self {
         Self {
             registry_name,
             wl_output,
-            output_name: None,
+            device_name: None,
             gamma_control: None,
             gamma_size: 0,
             color: Color::default(),
@@ -144,7 +144,7 @@ impl DisplayOutput {
     }
 
     fn destroy(&self) {
-        log::debug!("Destroy output `{}`", self.registry_name);
+        log::debug!("Destroy output {}", self.registry_name);
         if let Some(gamma_control) = &self.gamma_control {
             gamma_control.destroy();
         };
@@ -154,7 +154,7 @@ impl DisplayOutput {
     fn update_gamma(&mut self) -> anyhow::Result<()> {
         if self.gamma_size == 0 {
             log::warn!(
-                "Skip updating gamma of output `{}` as the gamma size is 0",
+                "Skip updating gamma of output {} as the gamma size is 0",
                 self.registry_name
             );
             return Ok(());
@@ -204,8 +204,8 @@ impl Dispatch<wl_registry::WlRegistry, ()> for WaylandState {
             } => {
                 if interface == WlOutput::interface().name {
                     let wl_output = registry.bind::<WlOutput, _, _>(name, version, qh, ());
-                    state.outputs.push(DisplayOutput::new(name, wl_output));
-                    log::debug!("Bind output `{}`", name);
+                    state.outputs.push(OutputDevice::new(name, wl_output));
+                    log::debug!("Bind output {}", name);
                 } else if interface == ZwlrGammaControlManagerV1::interface().name {
                     state.gamma_manager = Some(registry.bind::<ZwlrGammaControlManagerV1, _, _>(
                         name,
@@ -242,8 +242,8 @@ impl Dispatch<WlOutput, ()> for WaylandState {
                 .iter_mut()
                 .find(|o| o.wl_output == *proxy)
                 .expect("Received event for unknown output");
-            log::debug!("New output `{}`, named `{}`", output.registry_name, name);
-            output.output_name = Some(name);
+            log::debug!("New output {}, named {}", output.registry_name, name);
+            output.device_name = Some(name);
         }
     }
 }
@@ -279,7 +279,7 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
                 let output = &mut state.outputs[index];
                 output.gamma_size = size as usize;
                 log::debug!(
-                    "New gamma control for output `{}`, gamma size is `{}`",
+                    "New gamma control for output {}, gamma size is {}",
                     output.registry_name,
                     size
                 );
@@ -288,7 +288,7 @@ impl Dispatch<ZwlrGammaControlV1, ()> for WaylandState {
                 let output = state.outputs.swap_remove(index);
                 output.destroy();
                 log::error!(
-                    "Gamma control failed to assign gamma size to output `{}`",
+                    "Gamma control failed to assign gamma size to output {}",
                     output.registry_name
                 );
             }

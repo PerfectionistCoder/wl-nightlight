@@ -13,18 +13,18 @@ use sunrise::{
 
 use crate::{
     InternalError,
-    config::{Location, SwitchMode, TimeProviderMode},
+    config::{Location, Schedule, ScheduleType},
 };
 
 #[derive(PartialEq, Eq)]
 #[cfg_attr(test, derive(Debug))]
-pub enum OutputMode {
+pub enum ColorMode {
     Day,
     Night,
 }
 
 #[cfg(not(tarpaulin_include))]
-impl Display for OutputMode {
+impl Display for ColorMode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match *self {
             Self::Day => write!(f, "[day]"),
@@ -34,7 +34,7 @@ impl Display for OutputMode {
 }
 
 #[derive(Default)]
-struct TimeProviderState {
+struct ScheduleContext {
     coord: Option<Coordinates>,
     day_time: Option<NaiveTime>,
     night_time: Option<NaiveTime>,
@@ -42,17 +42,17 @@ struct TimeProviderState {
     night_delta: Option<TimeDelta>,
 }
 
-type TimeProviderType = fn(&TimeProviderState, NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>>;
-struct TimeProvider {
-    state: TimeProviderState,
-    day: TimeProviderType,
-    night: TimeProviderType,
+type SchedulerFn = fn(&ScheduleContext, NaiveDate) -> anyhow::Result<DateTime<chrono::Utc>>;
+struct Scheduler {
+    state: ScheduleContext,
+    day: SchedulerFn,
+    night: SchedulerFn,
 }
 
-impl TimeProvider {
-    fn new(switch_mode: SwitchMode, location: Option<Location>) -> anyhow::Result<Self> {
+impl Scheduler {
+    fn new(schedule: Schedule, location: Option<Location>) -> anyhow::Result<Self> {
         fn auto(
-            state: &TimeProviderState,
+            state: &ScheduleContext,
             date: NaiveDate,
             event: sunrise::SolarEvent,
         ) -> anyhow::Result<DateTime<chrono::Utc>> {
@@ -62,15 +62,15 @@ impl TimeProvider {
             )
         }
         let auto_day =
-            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+            |state: &ScheduleContext, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
                 auto(state, date, Sunrise)
             };
         let auto_night =
-            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+            |state: &ScheduleContext, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
                 auto(state, date, Sunset)
             };
-        fn fixed<T: Fn(&TimeProviderState) -> anyhow::Result<NaiveTime>>(
-            state: &TimeProviderState,
+        fn fixed<T: Fn(&ScheduleContext) -> anyhow::Result<NaiveTime>>(
+            state: &ScheduleContext,
             date: NaiveDate,
             get_field: T,
         ) -> anyhow::Result<DateTime<chrono::Utc>> {
@@ -80,7 +80,7 @@ impl TimeProvider {
                 .to_utc())
         }
         let fixed_day =
-            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+            |state: &ScheduleContext, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
                 fixed(state, date, |state| {
                     state.day_time.ok_or(
                         InternalError {
@@ -91,7 +91,7 @@ impl TimeProvider {
                 })
             };
         let fixed_night =
-            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+            |state: &ScheduleContext, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
                 fixed(state, date, |state| {
                     state.night_time.ok_or(
                         InternalError {
@@ -101,8 +101,8 @@ impl TimeProvider {
                     )
                 })
             };
-        fn relative<T: Fn(&TimeProviderState) -> anyhow::Result<TimeDelta>>(
-            state: &TimeProviderState,
+        fn relative<T: Fn(&ScheduleContext) -> anyhow::Result<TimeDelta>>(
+            state: &ScheduleContext,
             date: NaiveDate,
             get_field: T,
             event: sunrise::SolarEvent,
@@ -110,7 +110,7 @@ impl TimeProvider {
             Ok(auto(state, date, event)? + get_field(state)?)
         }
         let relative_day =
-            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+            |state: &ScheduleContext, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
                 relative(
                     state,
                     date,
@@ -126,7 +126,7 @@ impl TimeProvider {
                 )
             };
         let relative_night =
-            |state: &TimeProviderState, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
+            |state: &ScheduleContext, date: NaiveDate| -> anyhow::Result<DateTime<chrono::Utc>> {
                 relative(
                     state,
                     date,
@@ -142,9 +142,9 @@ impl TimeProvider {
                 )
             };
 
-        let mut state = TimeProviderState::default();
-        match (&switch_mode.day, &switch_mode.night) {
-            (TimeProviderMode::Fixed(_), TimeProviderMode::Fixed(_)) => {}
+        let mut state = ScheduleContext::default();
+        match (&schedule.day, &schedule.night) {
+            (ScheduleType::Fixed(_), ScheduleType::Fixed(_)) => {}
             _ => {
                 let location = location.ok_or(InternalError {
                     message: "Location is not set",
@@ -158,24 +158,24 @@ impl TimeProvider {
                 )
             }
         }
-        let day = match switch_mode.day {
-            TimeProviderMode::Auto => auto_day,
-            TimeProviderMode::Fixed(time) => {
+        let day = match schedule.day {
+            ScheduleType::Auto => auto_day,
+            ScheduleType::Fixed(time) => {
                 state.day_time = Some(time);
                 fixed_day
             }
-            TimeProviderMode::Relative(delta) => {
+            ScheduleType::Relative(delta) => {
                 state.day_delta = Some(delta);
                 relative_day
             }
         };
-        let night = match switch_mode.night {
-            TimeProviderMode::Auto => auto_night,
-            TimeProviderMode::Fixed(time) => {
+        let night = match schedule.night {
+            ScheduleType::Auto => auto_night,
+            ScheduleType::Fixed(time) => {
                 state.night_time = Some(time);
                 fixed_night
             }
-            TimeProviderMode::Relative(delta) => {
+            ScheduleType::Relative(delta) => {
                 state.night_delta = Some(delta);
                 relative_night
             }
@@ -185,67 +185,66 @@ impl TimeProvider {
     }
 }
 
-pub struct OutputState {
-    pub mode: OutputMode,
-    pub delay_in_milliseconds: i64,
-    time_provider: TimeProvider,
+pub struct ModeScheduler {
+    pub mode: ColorMode,
+    pub delay_ms: i64,
+    scheduler: Scheduler,
 }
 
-impl OutputState {
-    pub fn new(switch_mode: SwitchMode, location: Option<Location>) -> anyhow::Result<Self> {
-        let time_provider = TimeProvider::new(switch_mode, location)?;
-        let (mode, delay_in_milliseconds) =
-            get_next_mode_switch(&time_provider.state, time_provider.day, time_provider.night)?;
+impl ModeScheduler {
+    pub fn new(schedule: Schedule, location: Option<Location>) -> anyhow::Result<Self> {
+        let scheduler = Scheduler::new(schedule, location)?;
+        let (mode, delay_ms) = get_next_schedule(&scheduler.state, scheduler.day, scheduler.night)?;
 
         Ok(Self {
             mode,
-            delay_in_milliseconds,
-            time_provider,
+            delay_ms,
+            scheduler,
         })
     }
 
     pub fn next(&mut self) -> anyhow::Result<()> {
-        let (mode, delay_in_milliseconds) = get_next_mode_switch(
-            &self.time_provider.state,
-            self.time_provider.day,
-            self.time_provider.night,
+        let (mode, delay_ms) = get_next_schedule(
+            &self.scheduler.state,
+            self.scheduler.day,
+            self.scheduler.night,
         )?;
         self.mode = mode;
-        self.delay_in_milliseconds = delay_in_milliseconds;
+        self.delay_ms = delay_ms;
         Ok(())
     }
 }
 
-fn get_next_mode_switch(
-    state: &TimeProviderState,
-    day_time_provider: TimeProviderType,
-    night_time_provider: TimeProviderType,
-) -> anyhow::Result<(OutputMode, i64)> {
+fn get_next_schedule(
+    state: &ScheduleContext,
+    day_scheduler: SchedulerFn,
+    night_scheduler: SchedulerFn,
+) -> anyhow::Result<(ColorMode, i64)> {
     let date = Local::now().date_naive();
     let now = Utc::now();
 
-    let day_time = (day_time_provider)(state, date)?;
-    let night_time = (night_time_provider)(state, date)?;
+    let day_time = day_scheduler(state, date)?;
+    let night_time = night_scheduler(state, date)?;
 
     if day_time > night_time {
         log::error!(
-            "[switch-mode.day] `{}` is greater than [switch-mode.night] `{}`",
+            "`schedule.day` {} is greater than `schedule.night` {}",
             day_time.with_timezone(&Local).format("%H:%M"),
             night_time.with_timezone(&Local).format("%H:%M"),
         );
     }
 
-    let mode: OutputMode;
+    let mode: ColorMode;
     let until: DateTime<chrono::Utc>;
     if now < day_time {
-        mode = OutputMode::Night;
+        mode = ColorMode::Night;
         until = day_time;
     } else if now < night_time {
-        mode = OutputMode::Day;
+        mode = ColorMode::Day;
         until = night_time;
     } else {
-        mode = OutputMode::Night;
-        until = (day_time_provider)(state, date.succ_opt().unwrap())?
+        mode = ColorMode::Night;
+        until = day_scheduler(state, date.succ_opt().unwrap())?
     }
     Ok((mode, (until - now).num_milliseconds() + 1))
 }
@@ -305,13 +304,13 @@ mod test {
         });
 
         fn assert_next_event(
-            event: &mut OutputState,
-            expected_mode: OutputMode,
+            event: &mut ModeScheduler,
+            expected_mode: ColorMode,
             expected_hour: u32,
             minute_range: Range<u32>,
             offset: &FixedOffset,
         ) {
-            let dt = forward_time(event.delay_in_milliseconds, offset);
+            let dt = forward_time(event.delay_ms, offset);
             assert_eq!(event.mode, expected_mode);
             assert_eq!(dt.hour(), expected_hour);
             assert!(minute_range.contains(&dt.minute()),);
@@ -323,9 +322,9 @@ mod test {
         mod auto {
             use super::*;
 
-            const DAY_NIGHT_TIME: SwitchMode = SwitchMode {
-                day: TimeProviderMode::Auto,
-                night: TimeProviderMode::Auto,
+            const DAY_NIGHT_TIME: Schedule = Schedule {
+                day: ScheduleType::Auto,
+                night: ScheduleType::Auto,
             };
             const SUNRISE: u32 = 6;
             const SUNSET: u32 = 18;
@@ -335,28 +334,28 @@ mod test {
             #[test]
             fn morning() {
                 set_time(0, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
             }
 
             #[test]
             fn noon() {
                 set_time(13, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
             }
 
             #[test]
             fn midnight() {
                 set_time(23, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
             }
         }
 
@@ -366,9 +365,9 @@ mod test {
             const OFFSET: &FixedOffset = &FixedOffset::east_opt(0).unwrap();
             const LOCATION: Option<Location> = None;
 
-            const DAY_NIGHT_TIME: SwitchMode = SwitchMode {
-                day: TimeProviderMode::Fixed(NaiveTime::from_hms_opt(8, 0, 0).unwrap()),
-                night: TimeProviderMode::Fixed(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
+            const DAY_NIGHT_TIME: Schedule = Schedule {
+                day: ScheduleType::Fixed(NaiveTime::from_hms_opt(8, 0, 0).unwrap()),
+                night: ScheduleType::Fixed(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
             };
             const SUNRISE: u32 = 8;
             const SUNSET: u32 = 19;
@@ -377,37 +376,37 @@ mod test {
             #[test]
             fn morning() {
                 set_time(0, 0, *OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
             }
 
             #[test]
             fn noon() {
                 set_time(13, 0, *OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
             }
 
             #[test]
             fn midnight() {
                 set_time(23, 0, *OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
             }
         }
 
         mod relative {
             use super::*;
 
-            const DAY_NIGHT_TIME: SwitchMode = SwitchMode {
-                day: TimeProviderMode::Relative(TimeDelta::hours(1)),
-                night: TimeProviderMode::Relative(TimeDelta::hours(-2)),
+            const DAY_NIGHT_TIME: Schedule = Schedule {
+                day: ScheduleType::Relative(TimeDelta::hours(1)),
+                night: ScheduleType::Relative(TimeDelta::hours(-2)),
             };
             const SUNRISE: u32 = 7;
             const SUNSET: u32 = 16;
@@ -417,28 +416,28 @@ mod test {
             #[test]
             fn morning() {
                 set_time(0, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
             }
 
             #[test]
             fn noon() {
                 set_time(13, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
             }
 
             #[test]
             fn midnight() {
                 set_time(23, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
+                let mut event = ModeScheduler::new(DAY_NIGHT_TIME, NAIROBI_LOCATION).unwrap();
 
-                assert_next_event(&mut event, OutputMode::Night, SUNRISE, RANGE, OFFSET);
-                assert_next_event(&mut event, OutputMode::Day, SUNSET, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Night, SUNRISE, RANGE, OFFSET);
+                assert_next_event(&mut event, ColorMode::Day, SUNSET, RANGE, OFFSET);
             }
         }
 
@@ -448,24 +447,24 @@ mod test {
             #[test]
             fn day_auto_night_fixed() {
                 set_time(0, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(
-                    SwitchMode {
-                        day: TimeProviderMode::Auto,
-                        night: TimeProviderMode::Fixed(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
+                let mut event = ModeScheduler::new(
+                    Schedule {
+                        day: ScheduleType::Auto,
+                        night: ScheduleType::Fixed(NaiveTime::from_hms_opt(19, 0, 0).unwrap()),
                     },
                     NAIROBI_LOCATION,
                 )
                 .unwrap();
 
-                let sunrise = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
-                assert_eq!(event.mode, OutputMode::Night);
+                let sunrise = forward_time(event.delay_ms, &NAIROBI_OFFSET);
+                assert_eq!(event.mode, ColorMode::Night);
                 assert_eq!(sunrise.hour(), 6);
                 assert!(sunrise.minute() > 15 && sunrise.minute() < 45);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
-                assert_eq!(event.mode, OutputMode::Day);
+                let sunset = forward_time(event.delay_ms, &NAIROBI_OFFSET);
+                assert_eq!(event.mode, ColorMode::Day);
                 assert_eq!(sunset.hour(), 19);
                 assert_eq!(sunset.minute(), 0);
             }
@@ -473,24 +472,24 @@ mod test {
             #[test]
             fn day_fixed_night_auto() {
                 set_time(0, 0, NAIROBI_OFFSET);
-                let mut event = OutputState::new(
-                    SwitchMode {
-                        day: TimeProviderMode::Fixed(NaiveTime::from_hms_opt(7, 0, 0).unwrap()),
-                        night: TimeProviderMode::Auto,
+                let mut event = ModeScheduler::new(
+                    Schedule {
+                        day: ScheduleType::Fixed(NaiveTime::from_hms_opt(7, 0, 0).unwrap()),
+                        night: ScheduleType::Auto,
                     },
                     NAIROBI_LOCATION,
                 )
                 .unwrap();
 
-                let sunrise = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
-                assert_eq!(event.mode, OutputMode::Night);
+                let sunrise = forward_time(event.delay_ms, &NAIROBI_OFFSET);
+                assert_eq!(event.mode, ColorMode::Night);
                 assert_eq!(sunrise.hour(), 7);
                 assert_eq!(sunrise.minute(), 0);
 
                 mock_chrono::set(sunrise);
                 event.next().unwrap();
-                let sunset = forward_time(event.delay_in_milliseconds, &NAIROBI_OFFSET);
-                assert_eq!(event.mode, OutputMode::Day);
+                let sunset = forward_time(event.delay_ms, &NAIROBI_OFFSET);
+                assert_eq!(event.mode, ColorMode::Day);
                 assert_eq!(sunset.hour(), 18);
                 assert!(sunset.minute() > 15 && sunrise.minute() < 45);
             }

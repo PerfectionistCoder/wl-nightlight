@@ -1,6 +1,6 @@
 mod color;
 mod config;
-mod switch_mode;
+mod schedule;
 mod wayland;
 
 use chrono::{Local, TimeDelta};
@@ -18,8 +18,8 @@ use timerfd::{SetTimeFlags, TimerFd, TimerState};
 
 use config::RawConfig;
 use log::LevelFilter;
+use schedule::{ColorMode, ModeScheduler};
 use simple_logger::SimpleLogger;
-use switch_mode::{OutputMode, OutputState};
 use wayland::{Wayland, WaylandRequest};
 
 #[derive(Parser)]
@@ -33,7 +33,7 @@ struct Cli {
     verbose: u8,
     /// Turn off all logs
     #[arg(short, long)]
-    quite: bool,
+    quiet: bool,
 }
 
 #[derive(Error, Debug)]
@@ -45,7 +45,7 @@ pub struct InternalError<'a> {
 fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
 
-    let level_filter = if cli.quite {
+    let level_filter = if cli.quiet {
         LevelFilter::Off
     } else {
         match cli.verbose {
@@ -84,7 +84,7 @@ fn main() -> anyhow::Result<()> {
         wayland.process_requests();
     });
 
-    let mut output_state = OutputState::new(config.switch_mode, config.location)?;
+    let mut mode_scheduler = ModeScheduler::new(config.schedule, config.location)?;
     let mut timerfd = TimerFd::new_custom(timerfd::ClockId::Boottime, false, false)?;
     let mut poll_array = [libc::pollfd {
         fd: timerfd.as_fd().as_raw_fd(),
@@ -93,24 +93,24 @@ fn main() -> anyhow::Result<()> {
     }];
 
     loop {
-        log::info!("Enter {} mode", output_state.mode);
+        log::info!("Enter {} mode", mode_scheduler.mode);
 
-        request_sender.send(WaylandRequest::ChangeOutputColor(match output_state.mode {
-            OutputMode::Day => config.day,
-            OutputMode::Night => config.night,
-        }))?;
+        request_sender.send(WaylandRequest::ChangeOutputColor(
+            match mode_scheduler.mode {
+                ColorMode::Day => config.day,
+                ColorMode::Night => config.night,
+            },
+        ))?;
         wayland_receiver.recv()??;
 
         log::info!(
             "Next mode switch at {}",
-            (Local::now() + TimeDelta::milliseconds(output_state.delay_in_milliseconds))
+            (Local::now() + TimeDelta::milliseconds(mode_scheduler.delay_ms))
                 .format("%Y-%m-%d %H:%M")
         );
 
         timerfd.set_state(
-            TimerState::Oneshot(Duration::from_millis(
-                output_state.delay_in_milliseconds as u64,
-            )),
+            TimerState::Oneshot(Duration::from_millis(mode_scheduler.delay_ms as u64)),
             SetTimeFlags::Default,
         );
         loop {
@@ -123,6 +123,6 @@ fn main() -> anyhow::Result<()> {
             }
             break;
         }
-        output_state.next()?;
+        mode_scheduler.next()?;
     }
 }
