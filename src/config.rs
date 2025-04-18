@@ -3,7 +3,7 @@ use std::{
     ops::Deref,
 };
 
-use chrono::NaiveTime;
+use chrono::{NaiveTime, TimeDelta, Timelike};
 use serde::Deserialize;
 use thiserror::Error;
 use validator::{Validate, ValidationError, ValidationErrors, ValidationErrorsKind};
@@ -30,8 +30,22 @@ pub struct Location {
     pub longitude: f64,
 }
 
-fn validate_switch_mode(value: &str) -> Result<(), ValidationError> {
-    NaiveTime::parse_from_str(value, "%H:%M")
+fn parse_time_mode(time: &str) -> anyhow::Result<TimeProviderMode> {
+    let first_char = time.chars().next();
+    Ok(match first_char {
+        Some(c) if c == '+' || c == '-' => {
+            let sign = if first_char == Some('+') { 1 } else { -1 };
+            let time = NaiveTime::parse_from_str(&time[1..], "%H:%M")?;
+            TimeProviderMode::Relative(
+                TimeDelta::hours(time.hour() as i64 * sign)
+                    + TimeDelta::minutes(time.minute() as i64 * sign),
+            )
+        }
+        _ => TimeProviderMode::Fixed(NaiveTime::parse_from_str(time, "%H:%M")?),
+    })
+}
+fn validate_switch_mode(time: &str) -> Result<(), ValidationError> {
+    parse_time_mode(time)
         .map(|_| ())
         .map_err(|_| ValidationError::new("time"))
 }
@@ -89,7 +103,7 @@ impl Display for ConfigError {
                                     error.params["min"], error.params["max"]
                                 ),
                                 "time" => "is not in format `HH:MM`".to_string(),
-                                _ => panic!(),
+                                _ => format!("{}", error),
                             };
                             writeln!(f, "{}] {}", field_path, detail)?;
                         }
@@ -141,12 +155,6 @@ impl RawConfig {
             })
         }
 
-        fn parse_time_mode(time: &str) -> anyhow::Result<TimeProviderMode> {
-            Ok(TimeProviderMode::Fixed(NaiveTime::parse_from_str(
-                time, "%H:%M",
-            )?))
-        }
-
         let day_color = fill_color(self.day);
         let night_color = fill_color(self.night);
 
@@ -187,6 +195,7 @@ impl RawConfig {
 pub enum TimeProviderMode {
     Auto,
     Fixed(NaiveTime),
+    Relative(TimeDelta),
 }
 
 impl TimeProviderMode {
@@ -328,6 +337,44 @@ mod test {
             ";
             RawConfig::read(file).unwrap().check().unwrap();
         }
+
+        #[test]
+        fn day_auto_night_relative() {
+            let file = "
+                [switch-mode]
+                night = \"+01:00\"
+            ";
+            cmp_err(
+                RawConfig::read(file).unwrap().check(),
+                ConfigError::MissingLocation,
+            );
+        }
+
+        #[test]
+        fn day_relative_night_fixed() {
+            let file = "
+                [switch-mode]
+                day = \"-01:00\"
+                night = \"19:00\"
+            ";
+            cmp_err(
+                RawConfig::read(file).unwrap().check(),
+                ConfigError::MissingLocation,
+            );
+        }
+
+        #[test]
+        fn day_night_relative() {
+            let file = "
+                [switch-mode]
+                day = \"+02:00\"
+                night = \"+02:00\"
+            ";
+            cmp_err(
+                RawConfig::read(file).unwrap().check(),
+                ConfigError::MissingLocation,
+            );
+        }
     }
 
     #[test]
@@ -423,6 +470,46 @@ mod test {
                 TimeProviderMode::Fixed(NaiveTime::from_hms_opt(8, 30, 0).unwrap())
             );
             assert_eq!(config.switch_mode.night, TimeProviderMode::Auto);
+        }
+
+        #[test]
+        fn day_auto_night_relative() {
+            let file = "
+                    [location]
+                    latitude = 0
+                    longitude = 0
+
+                    [switch-mode]
+                    night = \"-00:30\"
+                ";
+            let config = RawConfig::read(file).unwrap().check().unwrap();
+            assert_eq!(config.switch_mode.day, TimeProviderMode::Auto);
+            assert_eq!(
+                config.switch_mode.night,
+                TimeProviderMode::Relative(-TimeDelta::minutes(30))
+            );
+        }
+
+        #[test]
+        fn day_fixed_night_relative() {
+            let file = "
+                    [location]
+                    latitude = 0
+                    longitude = 0
+
+                    [switch-mode]
+                    day = \"09:00\"
+                    night = \"+00:00\"
+                ";
+            let config = RawConfig::read(file).unwrap().check().unwrap();
+            assert_eq!(
+                config.switch_mode.day,
+                TimeProviderMode::Fixed(NaiveTime::from_hms_opt(9, 0, 0).unwrap())
+            );
+            assert_eq!(
+                config.switch_mode.night,
+                TimeProviderMode::Relative(TimeDelta::seconds(0))
+            );
         }
     }
 
